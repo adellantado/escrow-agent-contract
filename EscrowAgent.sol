@@ -33,7 +33,15 @@ contract EscrowAgent {
         uint256 feePercentage;
     }
 
-    // TODO: events
+    event AgreementCreated(address indexed depositor, address indexed beneficiary, uint256 indexed agreementId, uint256 amount);
+    event AgreementCanceled(uint256 indexed agreementId);
+    event AgreementApproved(uint256 indexed agreementId);
+    event AgreementRejected(uint256 indexed agreementId);
+    event FundsAdded(uint256 indexed agreementId, address indexed sender, uint256 amount);
+    event FundsWithdrawed(uint256 indexed agreementId, address indexed receiver, uint256 amount);
+    event FundsReleased(uint256 indexed agreementId);
+    event DisputeRaised(uint256 indexed agreementId);
+    event DisputeResolved(uint256 indexed agreementId);
 
     modifier onlyDepositor(uint256 agreementId) {
         require(msg.sender == address(_escrow[agreementId].depositor), "You are not the depositor.");
@@ -68,31 +76,30 @@ contract EscrowAgent {
             depositor: payable(msg.sender),
             beneficiary: _beneficiary
         });
-        // event
+        emit AgreementCreated(msg.sender, _beneficiary, _agreementCounter, msg.value);
     }
 
     function cancelAgreement(uint256 agreementId) public 
             onlyDepositor(agreementId) inStatus(Status.Funded, agreementId) {
         _escrow[agreementId].status = Status.Canceled;
-        // TODO
+        emit AgreementCanceled(agreementId);
     }
 
     function approveAggrement(uint256 agreementId) public 
             onlyBeneficiary(agreementId) inStatus(Status.Funded, agreementId) {
         _escrow[agreementId].status = Status.Active;
-
-        // event
+        emit AgreementApproved(agreementId);
     }
 
     function rejectAgreement(uint256 agreementId) public 
             onlyBeneficiary(agreementId) inStatus(Status.Funded, agreementId) {
         _escrow[agreementId].status = Status.Rejected;
-        // TODO
+        emit AgreementRejected(agreementId);
     }
 
-    function addFunds(uint256 agreementId) public payable
+    function addFunds(uint256 agreementId, uint256 amount) public payable
             onlyDepositor(agreementId) inStatus(Status.Funded, agreementId) {
-        // TODO
+        emit FundsAdded(agreementId, msg.sender, amount);
     }
 
     function withdrawFunds(uint256 agreementId) public payable {
@@ -100,10 +107,12 @@ contract EscrowAgent {
         if (agreement.beneficiary == msg.sender && agreement.status == Status.Closed) {
             agreement.beneficiary.transfer(_escrow[agreementId].amount);
             _escrow[agreementId].status = Status.Withdrawn;
+            emit FundsWithdrawed(agreementId, msg.sender, _escrow[agreementId].amount);
         } else if (agreement.depositor == msg.sender && (agreement.status == Status.Canceled || agreement.status == Status.Rejected)) {
             agreement.depositor.transfer(_escrow[agreementId].amount);
+            _escrow[agreementId].status = Status.Withdrawn;
+            emit FundsWithdrawed(agreementId, msg.sender, _escrow[agreementId].amount);
         }
-        // event
     }
 
     function registerArbitrator(uint256 agreementId) public {
@@ -113,21 +122,19 @@ contract EscrowAgent {
     function releaseFunds(uint256 agreementId) public 
             onlyDepositor(agreementId) inStatus(Status.Active, agreementId) {
         _escrow[agreementId].status = Status.Closed;
-
-        // event
+        emit FundsReleased(agreementId);
     }
 
     function raiseDispute(uint256 agreementId) public 
             onlyDepositor(agreementId) inStatus(Status.Active, agreementId) {
         _escrow[agreementId].status = Status.Disputed;
-
-        // event
+        emit DisputeRaised(agreementId);
     }
 
     function resolveDispute(uint256 agreementId) public
             onlyArbitrator(agreementId) inStatus(Status.Disputed, agreementId) {
         _escrow[agreementId].status = Status.Resolved;
-        // TODO
+        emit DisputeResolved(agreementId);
     }
 
     function getAgreementStatus(uint256 agreementId) external view returns (Status status) {
