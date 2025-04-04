@@ -2,7 +2,6 @@
 
 pragma solidity ^0.8.26;
 
-
 // This contract is a "Escrow Agent" contract with the following features:
 // * Deposit funds in escrow
 // * Reject deposit if there was an error
@@ -54,6 +53,7 @@ contract EscrowAgent {
     event AgreementCanceled(uint256 indexed agreementId);
     event AgreementApproved(uint256 indexed agreementId);
     event AgreementRejected(uint256 indexed agreementId);
+    event AgreementRefunded(uint256 indexed agreementId);
     event FundsAdded(uint256 indexed agreementId, address indexed sender, uint256 amount, uint256 totalAmount);
     event FundsWithdrawed(uint256 indexed agreementId, address indexed receiver, uint256 amount);
     event FundsReleased(uint256 indexed agreementId);
@@ -116,6 +116,12 @@ contract EscrowAgent {
         emit AgreementRejected(agreementId);
     }
 
+    function refundAgreement(uint256 agreementId) public 
+            onlyBeneficiary(agreementId) inStatus(Status.Active, agreementId) {
+        _escrow[agreementId].status = Status.Refunded;
+        emit AgreementRefunded(agreementId);
+    }
+
     function addFunds(uint256 agreementId) public payable
             onlyDepositor(agreementId) inStatus(Status.Funded, agreementId) {
         _escrow[agreementId].amount += msg.value;
@@ -128,7 +134,10 @@ contract EscrowAgent {
             agreement.beneficiary.transfer(_escrow[agreementId].amount);
             _escrow[agreementId].status = Status.Withdrawn;
             emit FundsWithdrawed(agreementId, msg.sender, _escrow[agreementId].amount);
-        } else if (agreement.depositor == msg.sender && (agreement.status == Status.Canceled || agreement.status == Status.Rejected)) {
+        } else if (agreement.depositor == msg.sender && (
+                agreement.status == Status.Canceled || 
+                agreement.status == Status.Rejected || 
+                agreement.status == Status.Refunded)) {
             agreement.depositor.transfer(_escrow[agreementId].amount);
             _escrow[agreementId].status = Status.Withdrawn;
             emit FundsWithdrawed(agreementId, msg.sender, _escrow[agreementId].amount);
