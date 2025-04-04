@@ -2,9 +2,25 @@
 
 pragma solidity ^0.8.26;
 
+
+// This contract is a "Escrow Agent" contract with the following features:
+// * Deposit funds in escrow
+// * Reject deposit if there was an error
+// * Withdraw funds from escrow
+// * Release funds after being successful
+// TODO:
+// - automatic release funds if there is no dispute
+// - multiple agreements
+// - dispute resolvance if arbitrator isn't agreed or arbitrator isn't active (get arbitrator from the pool)
+// - funds distribution in dispute
+// - register to the pool
+// - erc20 support
+// - min deposited funds
+// 
 contract EscrowAgent {
     
     mapping (uint256 => Agreement) internal _escrow;
+    mapping (uint256 => Dispute) internal _disputes;
     address[] internal _arbitratorsPool;
 
     uint256 private _agreementCounter;
@@ -31,17 +47,19 @@ contract EscrowAgent {
     struct Dispute {
         address payable arbitrator;
         uint256 feePercentage;
+        bool agreed;
     }
 
     event AgreementCreated(address indexed depositor, address indexed beneficiary, uint256 indexed agreementId, uint256 amount);
     event AgreementCanceled(uint256 indexed agreementId);
     event AgreementApproved(uint256 indexed agreementId);
     event AgreementRejected(uint256 indexed agreementId);
-    event FundsAdded(uint256 indexed agreementId, address indexed sender, uint256 amount);
+    event FundsAdded(uint256 indexed agreementId, address indexed sender, uint256 amount, uint256 totalAmount);
     event FundsWithdrawed(uint256 indexed agreementId, address indexed receiver, uint256 amount);
     event FundsReleased(uint256 indexed agreementId);
     event DisputeRaised(uint256 indexed agreementId);
     event DisputeResolved(uint256 indexed agreementId);
+    event ArbitratorAgreed(uint256 indexed agreementId, address indexed arbitrator, bool agreed);
 
     modifier onlyDepositor(uint256 agreementId) {
         require(msg.sender == address(_escrow[agreementId].depositor), "You are not the depositor.");
@@ -54,7 +72,8 @@ contract EscrowAgent {
     }
 
     modifier onlyArbitrator(uint256 agreementId) {
-        require(msg.sender == address(_escrow[agreementId].beneficiary), "You are not the arbitrator.");
+        require(msg.sender == address(_disputes[agreementId].arbitrator) &&
+             _disputes[agreementId].agreed, "You are not the arbitrator.");
         _;
     }
 
@@ -97,9 +116,10 @@ contract EscrowAgent {
         emit AgreementRejected(agreementId);
     }
 
-    function addFunds(uint256 agreementId, uint256 amount) public payable
+    function addFunds(uint256 agreementId) public payable
             onlyDepositor(agreementId) inStatus(Status.Funded, agreementId) {
-        emit FundsAdded(agreementId, msg.sender, amount);
+        _escrow[agreementId].amount += msg.value;
+        emit FundsAdded(agreementId, msg.sender, msg.value, _escrow[agreementId].amount+msg.value);
     }
 
     function withdrawFunds(uint256 agreementId) public payable {
@@ -113,10 +133,42 @@ contract EscrowAgent {
             _escrow[agreementId].status = Status.Withdrawn;
             emit FundsWithdrawed(agreementId, msg.sender, _escrow[agreementId].amount);
         }
+        revert("You cannot widthraw funds");
     }
 
-    function registerArbitrator(uint256 agreementId) public {
-        // TODO
+    function registerArbitrator(uint256 agreementId, address payable arbitrator) public 
+            inStatus(Status.Disputed, agreementId) {
+        require(_escrow[agreementId].beneficiary == msg.sender ||
+             _escrow[agreementId].depositor == msg.sender, "You are not the beneficiary or depositor");
+        // check dispute exists
+        if (_disputes[agreementId].arbitrator == address(0)) {
+            if (_escrow[agreementId].depositor == msg.sender) {
+                _disputes[agreementId] = Dispute({
+                    arbitrator: arbitrator,
+                    feePercentage: 100,
+                    agreed: false
+                });
+                emit ArbitratorAgreed(agreementId, arbitrator, false);
+            } else {
+                revert("Only contractor can initialize the arbitrator");
+            }
+        } else {
+            if (_escrow[agreementId].depositor == msg.sender) {
+                if (_disputes[agreementId].arbitrator != arbitrator) {
+                    _disputes[agreementId].agreed = false;
+                    _disputes[agreementId].arbitrator = arbitrator;
+                    emit ArbitratorAgreed(agreementId, arbitrator, false);
+                }
+            } else {
+                if (_disputes[agreementId].arbitrator == arbitrator) {
+                    // depositor set an arbitrator, beneficiary - agrees
+                    _disputes[agreementId].agreed = true;
+                    emit ArbitratorAgreed(agreementId, arbitrator, true);
+                } else {
+                    revert("The arbitrator address should be the same");
+                }
+            }
+        }
     }
 
     function releaseFunds(uint256 agreementId) public 
