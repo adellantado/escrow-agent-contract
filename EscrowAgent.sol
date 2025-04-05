@@ -10,15 +10,17 @@ pragma solidity ^0.8.26;
 // TODO:
 // - add deadlineDate
 // - multiple agreements
-// - dispute resolvance if arbitrator isn't agreed or arbitrator isn't active (get arbitrator from the pool)
+// - dispute resolvance if agreed arbitrator isn't active
 // - funds distribution in dispute
-// - register to the pool
+// - register arbitrators to the pool
 // - erc20 support
 // - min deposited funds
+// - agreement metadata
 // 
 contract EscrowAgent {
 
     uint256 public constant FUNDS_AUTORELEASED = 30 days;
+    uint256 public constant AGREE_ON_ARBITRATOR_PERIOD = 2 days;
     
     mapping (uint256 => Agreement) internal _escrow;
     mapping (uint256 => Dispute) internal _disputes;
@@ -32,7 +34,7 @@ contract EscrowAgent {
         Rejected, // ben
         Active, // ben
         Refunded, // ben
-        Closed, // dep
+        Closed, // dep, ben
         Disputed, // dep
         Resolved, // arb
         Withdrawn // dep, ben, arb
@@ -50,6 +52,7 @@ contract EscrowAgent {
         address payable arbitrator;
         uint256 feePercentage;
         bool agreed;
+        uint256 startDate;
     }
 
     event AgreementCreated(address indexed depositor, address indexed beneficiary, uint256 indexed agreementId, uint256 amount);
@@ -63,6 +66,7 @@ contract EscrowAgent {
     event DisputeRaised(uint256 indexed agreementId);
     event DisputeResolved(uint256 indexed agreementId);
     event ArbitratorAgreed(uint256 indexed agreementId, address indexed arbitrator, bool agreed);
+    event ArbitratorAutoAssigned(uint256 indexed agreementId, address indexed arbitrator);
 
     modifier onlyDepositor(uint256 agreementId) {
         require(msg.sender == address(_escrow[agreementId].depositor), "You are not the depositor.");
@@ -157,35 +161,34 @@ contract EscrowAgent {
 
     function registerArbitrator(uint256 agreementId, address payable arbitrator) public 
             onlyDepositorOrBeneficiary(agreementId) inStatus(Status.Disputed, agreementId) {
-        // check dispute exists
-        if (_disputes[agreementId].arbitrator == address(0)) {
-            if (_escrow[agreementId].depositor == msg.sender) {
-                _disputes[agreementId] = Dispute({
-                    arbitrator: arbitrator,
-                    feePercentage: 100,
-                    agreed: false
-                });
+        // After AGREE_ON_ARBITRATOR_PERIOD arbitrator forcefully assigned from the pool
+        if (block.timestamp >= _disputes[agreementId].startDate + AGREE_ON_ARBITRATOR_PERIOD){
+            assignArbitrator(agreementId);
+            return;
+        }
+        if (msg.sender == _escrow[agreementId].depositor) {
+            if (_disputes[agreementId].arbitrator != arbitrator) {
+                _disputes[agreementId].agreed = false;
+                _disputes[agreementId].arbitrator = arbitrator;
                 emit ArbitratorAgreed(agreementId, arbitrator, false);
-            } else {
-                revert("Only contractor can initialize the arbitrator");
             }
         } else {
-            if (_escrow[agreementId].depositor == msg.sender) {
-                if (_disputes[agreementId].arbitrator != arbitrator) {
-                    _disputes[agreementId].agreed = false;
-                    _disputes[agreementId].arbitrator = arbitrator;
-                    emit ArbitratorAgreed(agreementId, arbitrator, false);
-                }
+            if (_disputes[agreementId].arbitrator == arbitrator) {
+                // depositor set an arbitrator, beneficiary - agrees
+                _disputes[agreementId].agreed = true;
+                emit ArbitratorAgreed(agreementId, arbitrator, true);
             } else {
-                if (_disputes[agreementId].arbitrator == arbitrator) {
-                    // depositor set an arbitrator, beneficiary - agrees
-                    _disputes[agreementId].agreed = true;
-                    emit ArbitratorAgreed(agreementId, arbitrator, true);
-                } else {
-                    revert("The arbitrator address should be the same");
-                }
+                revert("The arbitrator address should be the same");
             }
         }
+    }
+
+    function assignArbitrator(uint256 agreementId) public 
+            onlyDepositorOrBeneficiary(agreementId) inStatus(Status.Disputed, agreementId) {
+        require(block.timestamp >= _disputes[agreementId].startDate + AGREE_ON_ARBITRATOR_PERIOD, "Too early to assign artibrator from the pool");
+        _disputes[agreementId].agreed = true;
+        _disputes[agreementId].arbitrator = payable(_arbitratorsPool[0]);
+        emit ArbitratorAutoAssigned(agreementId, _arbitratorsPool[0]);
     }
 
     function releaseFunds(uint256 agreementId) public 
@@ -200,6 +203,12 @@ contract EscrowAgent {
     function raiseDispute(uint256 agreementId) public 
             onlyDepositor(agreementId) inStatus(Status.Active, agreementId) {
         _escrow[agreementId].status = Status.Disputed;
+        _disputes[agreementId] = Dispute({
+            arbitrator: payable(0),
+            feePercentage: 100,
+            agreed: false,
+            startDate: block.timestamp
+        });
         emit DisputeRaised(agreementId);
     }
 
