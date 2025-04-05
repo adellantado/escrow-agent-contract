@@ -8,7 +8,7 @@ pragma solidity ^0.8.26;
 // * Withdraw funds from escrow
 // * Release funds after being successful
 // TODO:
-// - automatic release funds if there is no dispute
+// - add deadlineDate
 // - multiple agreements
 // - dispute resolvance if arbitrator isn't agreed or arbitrator isn't active (get arbitrator from the pool)
 // - funds distribution in dispute
@@ -17,6 +17,8 @@ pragma solidity ^0.8.26;
 // - min deposited funds
 // 
 contract EscrowAgent {
+
+    uint256 public constant FUNDS_AUTORELEASED = 30 days;
     
     mapping (uint256 => Agreement) internal _escrow;
     mapping (uint256 => Dispute) internal _disputes;
@@ -41,6 +43,7 @@ contract EscrowAgent {
         uint256 amount;
         address payable depositor;
         address payable beneficiary;
+        uint256 startDate;
     }
 
     struct Dispute {
@@ -71,6 +74,12 @@ contract EscrowAgent {
         _;
     }
 
+    modifier onlyDepositorOrBeneficiary(uint256 agreementId) {
+        require(msg.sender == address(_escrow[agreementId].depositor) || 
+            msg.sender == address(_escrow[agreementId].beneficiary), "You are not the depositor/beneficiary.");
+        _;
+    }
+
     modifier onlyArbitrator(uint256 agreementId) {
         require(msg.sender == address(_disputes[agreementId].arbitrator) &&
              _disputes[agreementId].agreed, "You are not the arbitrator.");
@@ -93,7 +102,8 @@ contract EscrowAgent {
             status: Status.Funded, 
             amount: msg.value,
             depositor: payable(msg.sender),
-            beneficiary: _beneficiary
+            beneficiary: _beneficiary,
+            startDate: block.timestamp
         });
         emit AgreementCreated(msg.sender, _beneficiary, _agreementCounter, msg.value);
     }
@@ -146,9 +156,7 @@ contract EscrowAgent {
     }
 
     function registerArbitrator(uint256 agreementId, address payable arbitrator) public 
-            inStatus(Status.Disputed, agreementId) {
-        require(_escrow[agreementId].beneficiary == msg.sender ||
-             _escrow[agreementId].depositor == msg.sender, "You are not the beneficiary or depositor");
+            onlyDepositorOrBeneficiary(agreementId) inStatus(Status.Disputed, agreementId) {
         // check dispute exists
         if (_disputes[agreementId].arbitrator == address(0)) {
             if (_escrow[agreementId].depositor == msg.sender) {
@@ -181,7 +189,10 @@ contract EscrowAgent {
     }
 
     function releaseFunds(uint256 agreementId) public 
-            onlyDepositor(agreementId) inStatus(Status.Active, agreementId) {
+            onlyDepositorOrBeneficiary(agreementId) inStatus(Status.Active, agreementId) {
+        if (msg.sender == _escrow[agreementId].beneficiary) {
+            require(block.timestamp >= _escrow[agreementId].startDate + FUNDS_AUTORELEASED, "Funds are still locked");
+        }
         _escrow[agreementId].status = Status.Closed;
         emit FundsReleased(agreementId);
     }
