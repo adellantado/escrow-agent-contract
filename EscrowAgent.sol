@@ -8,18 +8,18 @@ pragma solidity ^0.8.26;
 // * Withdraw funds from escrow
 // * Release funds after being successful
 // TODO:
-// - add deadlineDate
-// - multiple agreements
+// - agreement metadata
 // - dispute resolvance if agreed arbitrator isn't active
 // - funds distribution in dispute
+// - multiple agreements
 // - register arbitrators to the pool
 // - erc20 support
 // - min deposited funds
-// - agreement metadata
 // 
 contract EscrowAgent {
 
-    uint256 public constant FUNDS_AUTORELEASED = 30 days;
+    uint256 public constant DEFAULT_DEADLINE_DATE = 30 days;
+    uint256 public constant RELEASE_FUNDS_AFTER_DEADLINE = 3 days;
     uint256 public constant AGREE_ON_ARBITRATOR_PERIOD = 2 days;
     
     mapping (uint256 => Agreement) internal _escrow;
@@ -46,6 +46,7 @@ contract EscrowAgent {
         address payable depositor;
         address payable beneficiary;
         uint256 startDate;
+        uint256 deadlineDate;
     }
 
     struct Dispute {
@@ -55,7 +56,7 @@ contract EscrowAgent {
         uint256 startDate;
     }
 
-    event AgreementCreated(address indexed depositor, address indexed beneficiary, uint256 indexed agreementId, uint256 amount);
+    event AgreementCreated(address indexed depositor, address indexed beneficiary, uint256 indexed agreementId, uint256 amount, uint256 deadlineDate);
     event AgreementCanceled(uint256 indexed agreementId);
     event AgreementApproved(uint256 indexed agreementId);
     event AgreementRejected(uint256 indexed agreementId);
@@ -100,6 +101,10 @@ contract EscrowAgent {
     }
 
     function createAgreement(address payable _beneficiary) public payable {
+        createAgreement(_beneficiary, block.timestamp + DEFAULT_DEADLINE_DATE);
+    }
+
+    function createAgreement(address payable _beneficiary, uint256 deadlineDate) public payable {
         _agreementCounter++;
         // TODO: multiple agreements
         _escrow[_agreementCounter] = Agreement({
@@ -107,9 +112,10 @@ contract EscrowAgent {
             amount: msg.value,
             depositor: payable(msg.sender),
             beneficiary: _beneficiary,
-            startDate: block.timestamp
+            startDate: block.timestamp,
+            deadlineDate: deadlineDate
         });
-        emit AgreementCreated(msg.sender, _beneficiary, _agreementCounter, msg.value);
+        emit AgreementCreated(msg.sender, _beneficiary, _agreementCounter, msg.value, deadlineDate);
     }
 
     function cancelAgreement(uint256 agreementId) public 
@@ -194,7 +200,7 @@ contract EscrowAgent {
     function releaseFunds(uint256 agreementId) public 
             onlyDepositorOrBeneficiary(agreementId) inStatus(Status.Active, agreementId) {
         if (msg.sender == _escrow[agreementId].beneficiary) {
-            require(block.timestamp >= _escrow[agreementId].startDate + FUNDS_AUTORELEASED, "Funds are still locked");
+            require(block.timestamp >= _escrow[agreementId].deadlineDate + RELEASE_FUNDS_AFTER_DEADLINE, "Funds will be released in 3 days after the deadline");
         }
         _escrow[agreementId].status = Status.Closed;
         emit FundsReleased(agreementId);
