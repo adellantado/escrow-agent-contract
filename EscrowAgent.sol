@@ -9,9 +9,10 @@ pragma solidity ^0.8.26;
 // * Release funds after being successful
 // TODO:
 // - agreement metadata
-// - dispute resolvance if agreed arbitrator isn't active
 // - funds distribution in dispute
+// - arbitrator fees
 // - multiple agreements
+// - withdraw for unresolved dispute
 // - register arbitrators to the pool
 // - erc20 support
 // - min deposited funds
@@ -20,7 +21,8 @@ contract EscrowAgent {
 
     uint256 public constant DEFAULT_DEADLINE_DATE = 30 days;
     uint256 public constant RELEASE_FUNDS_AFTER_DEADLINE = 3 days;
-    uint256 public constant AGREE_ON_ARBITRATOR_PERIOD = 2 days;
+    uint256 public constant AGREE_ON_ARBITRATOR_MAX_PERIOD = 2 days;
+    uint256 public constant RESOLVE_DISPUTE_MAX_PERIOD = 2 days;
     
     mapping (uint256 => Agreement) internal _escrow;
     mapping (uint256 => Dispute) internal _disputes;
@@ -37,6 +39,7 @@ contract EscrowAgent {
         Closed, // dep, ben
         Disputed, // dep
         Resolved, // arb
+        Unresolved, // dep, ben
         Withdrawn // dep, ben, arb
     }
 
@@ -54,6 +57,7 @@ contract EscrowAgent {
         uint256 feePercentage;
         bool agreed;
         uint256 startDate;
+        uint256 assignedDate;
     }
 
     event AgreementCreated(address indexed depositor, address indexed beneficiary, uint256 indexed agreementId, uint256 amount, uint256 deadlineDate);
@@ -66,8 +70,9 @@ contract EscrowAgent {
     event FundsReleased(uint256 indexed agreementId);
     event DisputeRaised(uint256 indexed agreementId);
     event DisputeResolved(uint256 indexed agreementId);
+    event DisputeUnresolved(uint256 indexed agreementId);
     event ArbitratorAgreed(uint256 indexed agreementId, address indexed arbitrator, bool agreed);
-    event ArbitratorAutoAssigned(uint256 indexed agreementId, address indexed arbitrator);
+    event PoolArbitratorAssigned(uint256 indexed agreementId, address indexed arbitrator);
 
     modifier onlyDepositor(uint256 agreementId) {
         require(msg.sender == address(_escrow[agreementId].depositor), "You are not the depositor.");
@@ -168,7 +173,7 @@ contract EscrowAgent {
     function registerArbitrator(uint256 agreementId, address payable arbitrator) public 
             onlyDepositorOrBeneficiary(agreementId) inStatus(Status.Disputed, agreementId) {
         // After AGREE_ON_ARBITRATOR_PERIOD arbitrator forcefully assigned from the pool
-        if (block.timestamp >= _disputes[agreementId].startDate + AGREE_ON_ARBITRATOR_PERIOD){
+        if (block.timestamp >= _disputes[agreementId].startDate + AGREE_ON_ARBITRATOR_MAX_PERIOD){
             assignArbitrator(agreementId);
             return;
         }
@@ -191,14 +196,22 @@ contract EscrowAgent {
 
     function assignArbitrator(uint256 agreementId) public 
             onlyDepositorOrBeneficiary(agreementId) inStatus(Status.Disputed, agreementId) {
-        require(block.timestamp >= _disputes[agreementId].startDate + AGREE_ON_ARBITRATOR_PERIOD, "Too early to assign artibrator from the pool");
-        _disputes[agreementId].agreed = true;
+        if (_disputes[agreementId].agreed) {
+            // if arbitrator is agreed on but he/she does nothing after 2 days - trigger arbitrator assigment from the pool
+            require(block.timestamp >= _disputes[agreementId].startDate + AGREE_ON_ARBITRATOR_MAX_PERIOD + RESOLVE_DISPUTE_MAX_PERIOD, "Too early to assign artibrator from the pool");
+        } else {
+            // if arbitrator is not agreed we need to trigger assigment from the pool
+            require(block.timestamp >= _disputes[agreementId].startDate + AGREE_ON_ARBITRATOR_MAX_PERIOD, "Too early to assign artibrator from the pool");
+        }
         _disputes[agreementId].arbitrator = payable(_arbitratorsPool[0]);
-        emit ArbitratorAutoAssigned(agreementId, _arbitratorsPool[0]);
+        _disputes[agreementId].agreed = true;
+        _disputes[agreementId].assignedDate = block.timestamp;
+        emit PoolArbitratorAssigned(agreementId, _arbitratorsPool[0]);
     }
 
     function releaseFunds(uint256 agreementId) public 
             onlyDepositorOrBeneficiary(agreementId) inStatus(Status.Active, agreementId) {
+        // release funds if there is no dispute
         if (msg.sender == _escrow[agreementId].beneficiary) {
             require(block.timestamp >= _escrow[agreementId].deadlineDate + RELEASE_FUNDS_AFTER_DEADLINE, "Funds will be released in 3 days after the deadline");
         }
@@ -213,15 +226,26 @@ contract EscrowAgent {
             arbitrator: payable(0),
             feePercentage: 100,
             agreed: false,
-            startDate: block.timestamp
+            startDate: block.timestamp,
+            assignedDate: 0
         });
         emit DisputeRaised(agreementId);
     }
 
     function resolveDispute(uint256 agreementId) public
-            onlyArbitrator(agreementId) inStatus(Status.Disputed, agreementId) {
-        _escrow[agreementId].status = Status.Resolved;
-        emit DisputeResolved(agreementId);
+            inStatus(Status.Disputed, agreementId) {
+        if (msg.sender == _disputes[agreementId].arbitrator) {
+            _escrow[agreementId].status = Status.Resolved;
+            emit DisputeResolved(agreementId);
+        } else {
+            // if pool arbitrator doesn't resolve the dispute - set Unresolved status and split the escrow
+            require(msg.sender == address(_escrow[agreementId].depositor) || 
+                msg.sender == address(_escrow[agreementId].beneficiary), "You are not the depositor/beneficiary.");
+            require(block.timestamp >= _disputes[agreementId].assignedDate + RESOLVE_DISPUTE_MAX_PERIOD, 
+                "You can resolve dispute yourself in 2 days after the pool arbitrator assignment date");
+            _escrow[agreementId].status = Status.Unresolved;
+            emit DisputeUnresolved(agreementId);
+        }
     }
 
     function getAgreementStatus(uint256 agreementId) external view returns (Status status) {
