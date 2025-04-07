@@ -31,32 +31,84 @@ contract EscrowAgent {
     uint256 private _agreementCounter;
 
     enum Status {
+        // The workflow for "Agreement"
+        //
+        // Funds added to escrow
+        // ||
+        // \/
         Funded, // dep
+        // ||
+        // \/
+        // Depositor changed his mind, if beneficiary haven't agree yet
         Canceled, // dep
+        // 
+        // Funded 
+        // ||
+        // \/
+        // Beneficiary rejected the agreement
         Rejected, // ben
+        //
+        // Funded
+        // ||
+        // \/
+        // Beneficiary agreed on terms
         Active, // ben
+        // ||
+        // \/
+        // Beneficiary decided to return funds
         Refunded, // ben
+        //
+        // Active
+        // ||
+        // \/
+        // Depositor releases the funds or beneficiary claimed funds after the deadline
         Closed, // dep, ben
+        //
+        // Active
+        // ||
+        // \/
+        // A dispute raised by depositor 
         Disputed, // dep
+        // ||
+        // \/
+        // The dispute resolved by arbitrator
         Resolved, // arb
+        // 
+        // Disputed
+        // ||
+        // \/
+        // The dispute isn't resolved by arbitrator
         Unresolved, // dep, ben
+        // 
+        // Funds withdrawed from the agreement
         Withdrawn // dep, ben, arb
     }
 
     struct Agreement {
+        // agreement status
         Status status;
+        // eth amount 
         uint256 amount;
+        // aka "buyer"
         address payable depositor;
+        // aka "seller"
         address payable beneficiary;
+        // agreement started at
         uint256 startDate;
+        // end date for result delivery, aka "delivery date"
         uint256 deadlineDate;
     }
 
     struct Dispute {
+        // either parties agree on arbitrator or it must be assigned from the pool of arbitrators
         address payable arbitrator;
+        // fee allocated for arbitrator 
         uint256 feePercentage;
+        // parties agree on arbitrator
         bool agreed;
+        // dispute started at
         uint256 startDate;
+        // arbitrator assignment from the pool
         uint256 assignedDate;
     }
 
