@@ -4,15 +4,16 @@ pragma solidity ^0.8.26;
 
 // This contract is a "Escrow Agent" contract with the following features:
 // * Deposit funds in escrow
-// * Reject deposit if there was an error
+// * Reject/Cancel/Refund deposit if there was an error
+// * Release funds on successful delivery
+// * Raise a dispute if needed
+// * Agree on arbitrator or get one assigned from the pool of arbitrators 
 // * Withdraw funds from escrow
-// * Release funds after being successful
 // TODO:
+// - prevent double withdrawal
 // - agreement metadata
-// - funds distribution in dispute
 // - arbitrator fees
 // - multiple agreements
-// - withdraw for unresolved dispute
 // - register arbitrators to the pool
 // - erc20 support
 // - min deposited funds
@@ -23,6 +24,7 @@ contract EscrowAgent {
     uint256 public constant RELEASE_FUNDS_AFTER_DEADLINE = 3 days;
     uint256 public constant AGREE_ON_ARBITRATOR_MAX_PERIOD = 2 days;
     uint256 public constant RESOLVE_DISPUTE_MAX_PERIOD = 2 days;
+    uint256 public constant UNRESOLVED_DISPUTE_REFUND_PERCENTAGE = 500000;
     
     mapping (uint256 => Agreement) internal _escrow;
     mapping (uint256 => Dispute) internal _disputes;
@@ -31,15 +33,15 @@ contract EscrowAgent {
     uint256 private _agreementCounter;
 
     enum Status {
-        // The workflow for "Agreement"
+        // The workflow for an "Agreement"
         //
-        // Funds added to escrow
+        // Funds added to the escrow
         // ||
         // \/
         Funded, // dep
         // ||
         // \/
-        // Depositor changed his mind, if beneficiary haven't agree yet
+        // Depositor changed his mind, if beneficiary haven't agreed yet
         Canceled, // dep
         // 
         // Funded 
@@ -61,27 +63,24 @@ contract EscrowAgent {
         // Active
         // ||
         // \/
-        // Depositor releases the funds or beneficiary claimed funds after the deadline
+        // Depositor released the funds or the beneficiary claimed funds after the deadline
         Closed, // dep, ben
         //
         // Active
         // ||
         // \/
-        // A dispute raised by depositor 
+        // A dispute raised by the depositor 
         Disputed, // dep
         // ||
         // \/
-        // The dispute resolved by arbitrator
+        // The dispute resolved by the arbitrator
         Resolved, // arb
         // 
         // Disputed
         // ||
         // \/
-        // The dispute isn't resolved by arbitrator
-        Unresolved, // dep, ben
-        // 
-        // Funds withdrawed from the agreement
-        Withdrawn // dep, ben, arb
+        // The dispute wasn't resolved by the arbitrator
+        Unresolved // dep, ben
     }
 
     struct Agreement {
@@ -102,7 +101,7 @@ contract EscrowAgent {
     struct Dispute {
         // either parties agree on arbitrator or it must be assigned from the pool of arbitrators
         address payable arbitrator;
-        // fee allocated for arbitrator 
+        // fee allocated for arbitrator
         uint256 feePercentage;
         // parties agree on arbitrator
         bool agreed;
@@ -110,6 +109,8 @@ contract EscrowAgent {
         uint256 startDate;
         // arbitrator assignment from the pool
         uint256 assignedDate;
+        // refund for depositor
+        uint256 refundAmount;
     }
 
     event AgreementCreated(address indexed depositor, address indexed beneficiary, uint256 indexed agreementId, uint256 amount, uint256 deadlineDate);
@@ -121,8 +122,8 @@ contract EscrowAgent {
     event FundsWithdrawed(uint256 indexed agreementId, address indexed receiver, uint256 amount);
     event FundsReleased(uint256 indexed agreementId);
     event DisputeRaised(uint256 indexed agreementId);
-    event DisputeResolved(uint256 indexed agreementId);
-    event DisputeUnresolved(uint256 indexed agreementId);
+    event DisputeResolved(uint256 indexed agreementId, uint256 refundPercentage, uint256 refundAmount);
+    event DisputeUnresolved(uint256 indexed agreementId, uint256 refundPercentage, uint256 refundAmount);
     event ArbitratorAgreed(uint256 indexed agreementId, address indexed arbitrator, bool agreed);
     event PoolArbitratorAssigned(uint256 indexed agreementId, address indexed arbitrator);
 
@@ -207,17 +208,25 @@ contract EscrowAgent {
 
     function withdrawFunds(uint256 agreementId) public payable {
         Agreement memory agreement = _escrow[agreementId];
-        if (agreement.beneficiary == msg.sender && agreement.status == Status.Closed) {
-            agreement.beneficiary.transfer(_escrow[agreementId].amount);
-            _escrow[agreementId].status = Status.Withdrawn;
-            emit FundsWithdrawed(agreementId, msg.sender, _escrow[agreementId].amount);
-        } else if (agreement.depositor == msg.sender && (
-                agreement.status == Status.Canceled || 
-                agreement.status == Status.Rejected || 
-                agreement.status == Status.Refunded)) {
-            agreement.depositor.transfer(_escrow[agreementId].amount);
-            _escrow[agreementId].status = Status.Withdrawn;
-            emit FundsWithdrawed(agreementId, msg.sender, _escrow[agreementId].amount);
+        if (agreement.beneficiary == msg.sender) {
+            if (agreement.status == Status.Closed) {
+                agreement.beneficiary.transfer(_escrow[agreementId].amount);
+                emit FundsWithdrawed(agreementId, msg.sender, _escrow[agreementId].amount);
+            } else if(agreement.status == Status.Resolved || agreement.status == Status.Unresolved) {
+                agreement.beneficiary.transfer(
+                    _escrow[agreementId].amount - _disputes[agreementId].refundAmount);
+                emit FundsWithdrawed(agreementId, msg.sender,
+                    _escrow[agreementId].amount - _disputes[agreementId].refundAmount);
+            }
+        } else if (agreement.depositor == msg.sender) {
+            if (agreement.status == Status.Canceled || agreement.status == Status.Rejected || 
+                    agreement.status == Status.Refunded) {
+                agreement.depositor.transfer(_escrow[agreementId].amount);
+                emit FundsWithdrawed(agreementId, msg.sender, _escrow[agreementId].amount);
+            } else if(agreement.status == Status.Resolved || agreement.status == Status.Unresolved) {
+                agreement.depositor.transfer(_disputes[agreementId].refundAmount);
+                emit FundsWithdrawed(agreementId, msg.sender, _disputes[agreementId].refundAmount);
+            }
         }
         revert("You cannot widthraw funds");
     }
@@ -279,25 +288,28 @@ contract EscrowAgent {
             feePercentage: 100,
             agreed: false,
             startDate: block.timestamp,
-            assignedDate: 0
+            assignedDate: 0,
+            refundAmount: 0
         });
         emit DisputeRaised(agreementId);
     }
 
     function resolveDispute(uint256 agreementId) public
-            inStatus(Status.Disputed, agreementId) {
-        if (msg.sender == _disputes[agreementId].arbitrator) {
-            _escrow[agreementId].status = Status.Resolved;
-            emit DisputeResolved(agreementId);
-        } else {
-            // if pool arbitrator doesn't resolve the dispute - set Unresolved status and split the escrow
-            require(msg.sender == address(_escrow[agreementId].depositor) || 
-                msg.sender == address(_escrow[agreementId].beneficiary), "You are not the depositor/beneficiary.");
-            require(block.timestamp >= _disputes[agreementId].assignedDate + RESOLVE_DISPUTE_MAX_PERIOD, 
-                "You can resolve dispute yourself in 2 days after the pool arbitrator assignment date");
-            _escrow[agreementId].status = Status.Unresolved;
-            emit DisputeUnresolved(agreementId);
-        }
+            onlyDepositorOrBeneficiary(agreementId) inStatus(Status.Disputed, agreementId) {
+        // if pool arbitrator doesn't resolve the dispute - set Unresolved status and split the escrow
+        require(block.timestamp >= _disputes[agreementId].assignedDate + RESOLVE_DISPUTE_MAX_PERIOD, 
+            "You can resolve dispute yourself in 2 days after the pool arbitrator assignment date");
+        _disputes[agreementId].refundAmount = _escrow[agreementId].amount * UNRESOLVED_DISPUTE_REFUND_PERCENTAGE / 1_000_000;
+        _escrow[agreementId].status = Status.Unresolved;
+        emit DisputeUnresolved(agreementId, UNRESOLVED_DISPUTE_REFUND_PERCENTAGE, _disputes[agreementId].refundAmount);
+    }
+
+    function resolveDispute(uint256 agreementId, uint256 refundPercentage) public
+            onlyArbitrator(agreementId) inStatus(Status.Disputed, agreementId) {
+        require(refundPercentage >= 0 && refundPercentage <= 1000000, "Refunded percent should be between 0 and 1000000");
+        _disputes[agreementId].refundAmount = _escrow[agreementId].amount * refundPercentage / 1_000_000;
+        _escrow[agreementId].status = Status.Resolved;
+        emit DisputeResolved(agreementId, refundPercentage, _disputes[agreementId].refundAmount);
     }
 
     function getAgreementStatus(uint256 agreementId) external view returns (Status status) {
