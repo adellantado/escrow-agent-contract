@@ -12,7 +12,6 @@ pragma solidity ^0.8.26;
 // TODO:
 // - prevent double withdrawal
 // - agreement metadata
-// - arbitrator fees
 // - multiple agreements
 // - register arbitrators to the pool
 // - erc20 support
@@ -25,6 +24,7 @@ contract EscrowAgent {
     uint256 public constant AGREE_ON_ARBITRATOR_MAX_PERIOD = 2 days;
     uint256 public constant RESOLVE_DISPUTE_MAX_PERIOD = 2 days;
     uint256 public constant UNRESOLVED_DISPUTE_REFUND_PERCENTAGE = 500000;
+    uint256 public constant DEFAULT_ARBITRATOR_PERCENTAGE = 10000;
     
     mapping (uint256 => Agreement) internal _escrow;
     mapping (uint256 => Dispute) internal _disputes;
@@ -101,8 +101,10 @@ contract EscrowAgent {
     struct Dispute {
         // either parties agree on arbitrator or it must be assigned from the pool of arbitrators
         address payable arbitrator;
-        // fee allocated for arbitrator
+        // fees for arbitrator
         uint256 feePercentage;
+        // fees for arbitrator
+        uint256 feeAmount;
         // parties agree on arbitrator
         bool agreed;
         // dispute started at
@@ -212,7 +214,14 @@ contract EscrowAgent {
             if (agreement.status == Status.Closed) {
                 agreement.beneficiary.transfer(_escrow[agreementId].amount);
                 emit FundsWithdrawed(agreementId, msg.sender, _escrow[agreementId].amount);
-            } else if(agreement.status == Status.Resolved || agreement.status == Status.Unresolved) {
+            } else if(agreement.status == Status.Resolved) {
+                require(_escrow[agreementId].amount - _disputes[agreementId].feeAmount - _disputes[agreementId].refundAmount > 0, 
+                    "Funds are not available");
+                agreement.beneficiary.transfer(
+                    _escrow[agreementId].amount - _disputes[agreementId].feeAmount - _disputes[agreementId].refundAmount);
+                emit FundsWithdrawed(agreementId, msg.sender,
+                    _escrow[agreementId].amount - _disputes[agreementId].feeAmount - _disputes[agreementId].refundAmount);
+            } else if (agreement.status == Status.Unresolved) {
                 agreement.beneficiary.transfer(
                     _escrow[agreementId].amount - _disputes[agreementId].refundAmount);
                 emit FundsWithdrawed(agreementId, msg.sender,
@@ -224,33 +233,44 @@ contract EscrowAgent {
                 agreement.depositor.transfer(_escrow[agreementId].amount);
                 emit FundsWithdrawed(agreementId, msg.sender, _escrow[agreementId].amount);
             } else if(agreement.status == Status.Resolved || agreement.status == Status.Unresolved) {
+                require(_disputes[agreementId].refundAmount > 0, "Funds are not available");
                 agreement.depositor.transfer(_disputes[agreementId].refundAmount);
                 emit FundsWithdrawed(agreementId, msg.sender, _disputes[agreementId].refundAmount);
+            }
+        } else if (_disputes[agreementId].arbitrator == msg.sender) {
+            if (agreement.status == Status.Resolved) {
+                require(_disputes[agreementId].feeAmount > 0, "Funds are not available");
+                _disputes[agreementId].arbitrator.transfer(_disputes[agreementId].feeAmount);
+                emit FundsWithdrawed(agreementId, msg.sender, _disputes[agreementId].feeAmount);
             }
         }
         revert("You cannot widthraw funds");
     }
 
-    function registerArbitrator(uint256 agreementId, address payable arbitrator) public 
+    function registerArbitrator(uint256 agreementId, address payable arbitrator, uint256 feePercentage) public 
             onlyDepositorOrBeneficiary(agreementId) inStatus(Status.Disputed, agreementId) {
         // After AGREE_ON_ARBITRATOR_PERIOD arbitrator forcefully assigned from the pool
         if (block.timestamp >= _disputes[agreementId].startDate + AGREE_ON_ARBITRATOR_MAX_PERIOD){
             assignArbitrator(agreementId);
             return;
         }
+        require(feePercentage >= 0 && feePercentage <= 1000000, 
+            "Fee percent should be between 0 and 1000000");
         if (msg.sender == _escrow[agreementId].depositor) {
             if (_disputes[agreementId].arbitrator != arbitrator) {
                 _disputes[agreementId].agreed = false;
                 _disputes[agreementId].arbitrator = arbitrator;
+                _disputes[agreementId].feePercentage = feePercentage;
                 emit ArbitratorAgreed(agreementId, arbitrator, false);
             }
         } else {
-            if (_disputes[agreementId].arbitrator == arbitrator) {
+            if (_disputes[agreementId].arbitrator == arbitrator && 
+                    _disputes[agreementId].feePercentage == feePercentage) {
                 // depositor set an arbitrator, beneficiary - agrees
                 _disputes[agreementId].agreed = true;
                 emit ArbitratorAgreed(agreementId, arbitrator, true);
             } else {
-                revert("The arbitrator address should be the same");
+                revert("The arbitrator address and fees should be the same");
             }
         }
     }
@@ -285,7 +305,8 @@ contract EscrowAgent {
         _escrow[agreementId].status = Status.Disputed;
         _disputes[agreementId] = Dispute({
             arbitrator: payable(0),
-            feePercentage: 100,
+            feePercentage: DEFAULT_ARBITRATOR_PERCENTAGE,
+            feeAmount: 0,
             agreed: false,
             startDate: block.timestamp,
             assignedDate: 0,
@@ -307,7 +328,8 @@ contract EscrowAgent {
     function resolveDispute(uint256 agreementId, uint256 refundPercentage) public
             onlyArbitrator(agreementId) inStatus(Status.Disputed, agreementId) {
         require(refundPercentage >= 0 && refundPercentage <= 1000000, "Refunded percent should be between 0 and 1000000");
-        _disputes[agreementId].refundAmount = _escrow[agreementId].amount * refundPercentage / 1_000_000;
+        _disputes[agreementId].feeAmount = _escrow[agreementId].amount *  _disputes[agreementId].feePercentage / 1_000_000;
+        _disputes[agreementId].refundAmount = (_escrow[agreementId].amount - _disputes[agreementId].feeAmount) * refundPercentage / 1_000_000;
         _escrow[agreementId].status = Status.Resolved;
         emit DisputeResolved(agreementId, refundPercentage, _disputes[agreementId].refundAmount);
     }
