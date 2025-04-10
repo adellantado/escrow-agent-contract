@@ -2,6 +2,8 @@
 
 pragma solidity ^0.8.26;
 
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+
 // This contract is a "Escrow Agent" contract with the following features:
 // * Deposit funds in escrow
 // * Reject/Cancel/Refund deposit if there was an error
@@ -10,14 +12,14 @@ pragma solidity ^0.8.26;
 // * Agree on arbitrator or get one assigned from the pool of arbitrators 
 // * Withdraw funds from escrow
 // TODO:
-// - prevent double withdrawal
 // - agreement metadata
-// - multiple agreements
+// - multiple agreements or escrow factory
 // - register arbitrators to the pool
 // - erc20 support
 // - min deposited funds
+// - add getter for balances / project info
 // 
-contract EscrowAgent {
+contract EscrowAgent is ReentrancyGuard {
 
     uint256 public constant DEFAULT_DEADLINE_DATE = 30 days;
     uint256 public constant RELEASE_FUNDS_AFTER_DEADLINE = 3 days;
@@ -103,8 +105,6 @@ contract EscrowAgent {
         address payable arbitrator;
         // fees for arbitrator
         uint256 feePercentage;
-        // fees for arbitrator
-        uint256 feeAmount;
         // parties agree on arbitrator
         bool agreed;
         // dispute started at
@@ -113,9 +113,14 @@ contract EscrowAgent {
         uint256 assignedDate;
         // refund for depositor
         uint256 refundAmount;
+        // fees for arbitrator
+        uint256 feeAmount;
+        // beneficiary's funds
+        uint256 releasedAmount;
     }
 
-    event AgreementCreated(address indexed depositor, address indexed beneficiary, uint256 indexed agreementId, uint256 amount, uint256 deadlineDate);
+    event AgreementCreated(address indexed depositor, address indexed beneficiary, 
+        uint256 indexed agreementId, uint256 amount, uint256 deadlineDate);
     event AgreementCanceled(uint256 indexed agreementId);
     event AgreementApproved(uint256 indexed agreementId);
     event AgreementRejected(uint256 indexed agreementId);
@@ -124,7 +129,8 @@ contract EscrowAgent {
     event FundsWithdrawed(uint256 indexed agreementId, address indexed receiver, uint256 amount);
     event FundsReleased(uint256 indexed agreementId);
     event DisputeRaised(uint256 indexed agreementId);
-    event DisputeResolved(uint256 indexed agreementId, uint256 refundPercentage, uint256 refundAmount);
+    event DisputeResolved(uint256 indexed agreementId, uint256 refundPercentage, 
+        uint256 feeAmount, uint256 refundAmount, uint256 releasedAmount);
     event DisputeUnresolved(uint256 indexed agreementId, uint256 refundPercentage, uint256 refundAmount);
     event ArbitratorAgreed(uint256 indexed agreementId, address indexed arbitrator, bool agreed);
     event PoolArbitratorAssigned(uint256 indexed agreementId, address indexed arbitrator);
@@ -208,40 +214,50 @@ contract EscrowAgent {
         emit FundsAdded(agreementId, msg.sender, msg.value, _escrow[agreementId].amount+msg.value);
     }
 
-    function withdrawFunds(uint256 agreementId) public payable {
+    function withdrawFunds(uint256 agreementId) public payable nonReentrant {
         Agreement memory agreement = _escrow[agreementId];
         if (agreement.beneficiary == msg.sender) {
             if (agreement.status == Status.Closed) {
-                agreement.beneficiary.transfer(_escrow[agreementId].amount);
-                emit FundsWithdrawed(agreementId, msg.sender, _escrow[agreementId].amount);
-            } else if(agreement.status == Status.Resolved) {
-                require(_escrow[agreementId].amount - _disputes[agreementId].feeAmount - _disputes[agreementId].refundAmount > 0, 
-                    "Funds are not available");
-                agreement.beneficiary.transfer(
-                    _escrow[agreementId].amount - _disputes[agreementId].feeAmount - _disputes[agreementId].refundAmount);
-                emit FundsWithdrawed(agreementId, msg.sender,
-                    _escrow[agreementId].amount - _disputes[agreementId].feeAmount - _disputes[agreementId].refundAmount);
+                require(_escrow[agreementId].amount > 0, "Funds are not available");
+                uint256 amount = _escrow[agreementId].amount;
+                _escrow[agreementId].amount = 0;
+                agreement.beneficiary.transfer(amount);
+                emit FundsWithdrawed(agreementId, msg.sender, amount);
+            } else if (agreement.status == Status.Resolved) {
+                require(_disputes[agreementId].releasedAmount > 0, "Funds are not available");
+                uint256 releasedAmount = _disputes[agreementId].releasedAmount;
+                _disputes[agreementId].releasedAmount = 0;
+                agreement.beneficiary.transfer(releasedAmount);
+                emit FundsWithdrawed(agreementId, msg.sender, releasedAmount);
             } else if (agreement.status == Status.Unresolved) {
-                agreement.beneficiary.transfer(
-                    _escrow[agreementId].amount - _disputes[agreementId].refundAmount);
-                emit FundsWithdrawed(agreementId, msg.sender,
-                    _escrow[agreementId].amount - _disputes[agreementId].refundAmount);
+                require(_disputes[agreementId].releasedAmount > 0, "Funds are not available");
+                uint256 releasedAmount = _disputes[agreementId].releasedAmount;
+                _disputes[agreementId].releasedAmount = 0;
+                agreement.beneficiary.transfer(releasedAmount);
+                emit FundsWithdrawed(agreementId, msg.sender, releasedAmount);
             }
         } else if (agreement.depositor == msg.sender) {
             if (agreement.status == Status.Canceled || agreement.status == Status.Rejected || 
                     agreement.status == Status.Refunded) {
-                agreement.depositor.transfer(_escrow[agreementId].amount);
-                emit FundsWithdrawed(agreementId, msg.sender, _escrow[agreementId].amount);
+                require(_escrow[agreementId].amount > 0, "Funds are not available");
+                uint256 amount = _escrow[agreementId].amount;
+                _escrow[agreementId].amount = 0;
+                agreement.depositor.transfer(amount);
+                emit FundsWithdrawed(agreementId, msg.sender, amount);
             } else if(agreement.status == Status.Resolved || agreement.status == Status.Unresolved) {
                 require(_disputes[agreementId].refundAmount > 0, "Funds are not available");
-                agreement.depositor.transfer(_disputes[agreementId].refundAmount);
-                emit FundsWithdrawed(agreementId, msg.sender, _disputes[agreementId].refundAmount);
+                uint256 refundAmount = _disputes[agreementId].refundAmount;
+                _disputes[agreementId].refundAmount = 0;
+                agreement.depositor.transfer(refundAmount);
+                emit FundsWithdrawed(agreementId, msg.sender, refundAmount);
             }
         } else if (_disputes[agreementId].arbitrator == msg.sender) {
             if (agreement.status == Status.Resolved) {
                 require(_disputes[agreementId].feeAmount > 0, "Funds are not available");
-                _disputes[agreementId].arbitrator.transfer(_disputes[agreementId].feeAmount);
-                emit FundsWithdrawed(agreementId, msg.sender, _disputes[agreementId].feeAmount);
+                uint256 feeAmount = _disputes[agreementId].feeAmount;
+                _disputes[agreementId].feeAmount = 0;
+                _disputes[agreementId].arbitrator.transfer(feeAmount);
+                emit FundsWithdrawed(agreementId, msg.sender, feeAmount);
             }
         }
         revert("You cannot widthraw funds");
@@ -310,7 +326,8 @@ contract EscrowAgent {
             agreed: false,
             startDate: block.timestamp,
             assignedDate: 0,
-            refundAmount: 0
+            refundAmount: 0,
+            releasedAmount: 0
         });
         emit DisputeRaised(agreementId);
     }
@@ -321,6 +338,7 @@ contract EscrowAgent {
         require(block.timestamp >= _disputes[agreementId].assignedDate + RESOLVE_DISPUTE_MAX_PERIOD, 
             "You can resolve dispute yourself in 2 days after the pool arbitrator assignment date");
         _disputes[agreementId].refundAmount = _escrow[agreementId].amount * UNRESOLVED_DISPUTE_REFUND_PERCENTAGE / 1_000_000;
+        _disputes[agreementId].releasedAmount = _escrow[agreementId].amount - _disputes[agreementId].refundAmount;
         _escrow[agreementId].status = Status.Unresolved;
         emit DisputeUnresolved(agreementId, UNRESOLVED_DISPUTE_REFUND_PERCENTAGE, _disputes[agreementId].refundAmount);
     }
@@ -330,8 +348,10 @@ contract EscrowAgent {
         require(refundPercentage >= 0 && refundPercentage <= 1000000, "Refunded percent should be between 0 and 1000000");
         _disputes[agreementId].feeAmount = _escrow[agreementId].amount *  _disputes[agreementId].feePercentage / 1_000_000;
         _disputes[agreementId].refundAmount = (_escrow[agreementId].amount - _disputes[agreementId].feeAmount) * refundPercentage / 1_000_000;
+        _disputes[agreementId].releasedAmount = _escrow[agreementId].amount - _disputes[agreementId].feeAmount - _disputes[agreementId].refundAmount;
         _escrow[agreementId].status = Status.Resolved;
-        emit DisputeResolved(agreementId, refundPercentage, _disputes[agreementId].refundAmount);
+        emit DisputeResolved(agreementId, refundPercentage, _disputes[agreementId].feeAmount, 
+            _disputes[agreementId].refundAmount, _disputes[agreementId].releasedAmount);
     }
 
     function getAgreementStatus(uint256 agreementId) external view returns (Status status) {
