@@ -356,6 +356,16 @@ contract EscrowAgent is ReentrancyGuard {
             _disputes[agreementId].refundAmount, _disputes[agreementId].releasedAmount);
     }
 
+    function getAgreementDetails(uint256 agreementId) external view 
+            returns (string memory, uint256, uint256, uint256) {
+        require(msg.sender == address(_escrow[agreementId].depositor) || 
+            msg.sender == address(_escrow[agreementId].beneficiary) ||
+            msg.sender == address(_disputes[agreementId].arbitrator), 
+            "You are not the depositor/beneficiary.");
+        return (_escrow[agreementId].detailsHash, _escrow[agreementId].amount, 
+            _escrow[agreementId].startDate, _escrow[agreementId].deadlineDate);
+    }
+
     function getAgreementStatus(uint256 agreementId) external view returns (Status) {
         return _escrow[agreementId].status;
     }
