@@ -12,12 +12,11 @@ import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 // * Agree on arbitrator or get one assigned from the pool of arbitrators 
 // * Withdraw funds from escrow
 // TODO:
-// - agreement metadata
 // - multiple agreements or escrow factory
 // - register arbitrators to the pool
 // - erc20 support
 // - min deposited funds
-// - add getter for balances / project info
+// - add getter for balances
 // 
 contract EscrowAgent is ReentrancyGuard {
 
@@ -98,6 +97,8 @@ contract EscrowAgent is ReentrancyGuard {
         uint256 startDate;
         // end date for result delivery, aka "delivery date"
         uint256 deadlineDate;
+        // ipfs CID
+        string detailsHash;
     }
 
     struct Dispute {
@@ -120,7 +121,7 @@ contract EscrowAgent is ReentrancyGuard {
     }
 
     event AgreementCreated(address indexed depositor, address indexed beneficiary, 
-        uint256 indexed agreementId, uint256 amount, uint256 deadlineDate);
+        uint256 indexed agreementId, uint256 amount, uint256 deadlineDate, string detailsHash);
     event AgreementCanceled(uint256 indexed agreementId);
     event AgreementApproved(uint256 indexed agreementId);
     event AgreementRejected(uint256 indexed agreementId);
@@ -166,11 +167,11 @@ contract EscrowAgent is ReentrancyGuard {
         _arbitratorsPool.push(msg.sender);
     }
 
-    function createAgreement(address payable _beneficiary) public payable {
-        createAgreement(_beneficiary, block.timestamp + DEFAULT_DEADLINE_DATE);
+    function createAgreement(address payable _beneficiary, string memory detailsHash) public payable {
+        createAgreement(_beneficiary, detailsHash, block.timestamp + DEFAULT_DEADLINE_DATE);
     }
 
-    function createAgreement(address payable _beneficiary, uint256 deadlineDate) public payable {
+    function createAgreement(address payable _beneficiary, string memory detailsHash, uint256 deadlineDate) public payable {
         _agreementCounter++;
         // TODO: multiple agreements
         _escrow[_agreementCounter] = Agreement({
@@ -179,9 +180,10 @@ contract EscrowAgent is ReentrancyGuard {
             depositor: payable(msg.sender),
             beneficiary: _beneficiary,
             startDate: block.timestamp,
-            deadlineDate: deadlineDate
+            deadlineDate: deadlineDate,
+            detailsHash: detailsHash
         });
-        emit AgreementCreated(msg.sender, _beneficiary, _agreementCounter, msg.value, deadlineDate);
+        emit AgreementCreated(msg.sender, _beneficiary, _agreementCounter, msg.value, deadlineDate, detailsHash);
     }
 
     function cancelAgreement(uint256 agreementId) public 
@@ -354,7 +356,7 @@ contract EscrowAgent is ReentrancyGuard {
             _disputes[agreementId].refundAmount, _disputes[agreementId].releasedAmount);
     }
 
-    function getAgreementStatus(uint256 agreementId) external view returns (Status status) {
+    function getAgreementStatus(uint256 agreementId) external view returns (Status) {
         return _escrow[agreementId].status;
     }
 }
