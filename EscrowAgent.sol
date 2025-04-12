@@ -16,7 +16,6 @@ import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 // - register arbitrators to the pool
 // - erc20 support
 // - min deposited funds
-// - add getter for balances
 // 
 contract EscrowAgent is ReentrancyGuard {
 
@@ -354,6 +353,35 @@ contract EscrowAgent is ReentrancyGuard {
         _escrow[agreementId].status = Status.Resolved;
         emit DisputeResolved(agreementId, refundPercentage, _disputes[agreementId].feeAmount, 
             _disputes[agreementId].refundAmount, _disputes[agreementId].releasedAmount);
+    }
+
+    function getWithdrawBalance(uint256 agreementId) external view 
+            inStatus(Status.Disputed, agreementId) returns (uint256) {
+        Agreement memory agreement = _escrow[agreementId];
+        if (agreement.beneficiary == msg.sender) {
+            if (agreement.status == Status.Closed) {
+                require(_escrow[agreementId].amount > 0, "Funds are not available");
+                return _escrow[agreementId].amount;
+            } else if (agreement.status == Status.Resolved || agreement.status == Status.Unresolved) {
+                require(_disputes[agreementId].releasedAmount > 0, "Funds are not available");
+                return _disputes[agreementId].releasedAmount;
+            }
+        } else if (agreement.depositor == msg.sender) {
+            if (agreement.status == Status.Canceled || agreement.status == Status.Rejected || 
+                    agreement.status == Status.Refunded) {
+                require(_escrow[agreementId].amount > 0, "Funds are not available");
+                return _escrow[agreementId].amount;
+            } else if(agreement.status == Status.Resolved || agreement.status == Status.Unresolved) {
+                require(_disputes[agreementId].refundAmount > 0, "Funds are not available");
+                return _disputes[agreementId].refundAmount;
+            }
+        } else if (_disputes[agreementId].arbitrator == msg.sender) {
+            if (agreement.status == Status.Resolved) {
+                require(_disputes[agreementId].feeAmount > 0, "Funds are not available");
+                return _disputes[agreementId].feeAmount;
+            }
+        }
+        revert("You cannot widthraw funds");
     }
 
     function getAgreementDetails(uint256 agreementId) external view 
