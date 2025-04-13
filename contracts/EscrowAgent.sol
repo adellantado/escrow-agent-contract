@@ -2,7 +2,7 @@
 
 pragma solidity ^0.8.26;
 
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 // This contract is a "Escrow Agent" contract with the following features:
 // * Deposit funds in escrow
@@ -173,6 +173,7 @@ contract EscrowAgent is ReentrancyGuard {
     function createAgreement(address payable _beneficiary, string memory detailsHash, uint256 deadlineDate) public payable {
         _agreementCounter++;
         // TODO: multiple agreements
+        emit AgreementCreated(msg.sender, _beneficiary, _agreementCounter, msg.value, deadlineDate, detailsHash);
         _escrow[_agreementCounter] = Agreement({
             status: Status.Funded, 
             amount: msg.value,
@@ -182,7 +183,6 @@ contract EscrowAgent is ReentrancyGuard {
             deadlineDate: deadlineDate,
             detailsHash: detailsHash
         });
-        emit AgreementCreated(msg.sender, _beneficiary, _agreementCounter, msg.value, deadlineDate, detailsHash);
     }
 
     function cancelAgreement(uint256 agreementId) public 
