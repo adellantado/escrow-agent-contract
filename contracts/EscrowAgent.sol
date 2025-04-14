@@ -9,7 +9,7 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 // * Reject/Cancel/Refund deposit if there was an error
 // * Release funds on successful delivery
 // * Raise a dispute if needed
-// * Agree on arbitrator or get one assigned from the pool of arbitrators 
+// * Agree on arbitrator or get one assigned from the pool of arbitrators
 // * Withdraw funds from escrow
 // TODO:
 // - multiple agreements or escrow factory
@@ -185,6 +185,12 @@ contract EscrowAgent is ReentrancyGuard {
         });
     }
 
+    function addFunds(uint256 agreementId) public payable
+            onlyDepositor(agreementId) inStatus(Status.Funded, agreementId) {
+        _escrow[agreementId].amount += msg.value;
+        emit FundsAdded(agreementId, msg.sender, msg.value, _escrow[agreementId].amount);
+    }
+
     function cancelAgreement(uint256 agreementId) public 
             onlyDepositor(agreementId) inStatus(Status.Funded, agreementId) {
         _escrow[agreementId].status = Status.Canceled;
@@ -207,12 +213,6 @@ contract EscrowAgent is ReentrancyGuard {
             onlyBeneficiary(agreementId) inStatus(Status.Active, agreementId) {
         _escrow[agreementId].status = Status.Refunded;
         emit AgreementRefunded(agreementId);
-    }
-
-    function addFunds(uint256 agreementId) public payable
-            onlyDepositor(agreementId) inStatus(Status.Funded, agreementId) {
-        _escrow[agreementId].amount += msg.value;
-        emit FundsAdded(agreementId, msg.sender, msg.value, _escrow[agreementId].amount+msg.value);
     }
 
     function withdrawFunds(uint256 agreementId) public payable nonReentrant {
