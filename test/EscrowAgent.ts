@@ -54,7 +54,7 @@ import {
             // check funds moved
         });
 
-        it("Should add funds to an existing agreement", async () => {
+        it("Depositor should add funds to an existing agreement", async () => {
             const { escrow, owner, depositor, beneficiary, someone, agreementId} = await loadFixture(createAgreementFixture);
             const value = hre.ethers.parseEther("0.01");
             // check event with args
@@ -70,7 +70,7 @@ import {
             expect(await escrow.getAgreementStatus(agreementId)).to.be.equal(0);
         });
 
-        it("Should NOT add funds, access denied for other accounts", async () => {
+        it("Beneficiary/others should NOT add funds", async () => {
             const { escrow, owner, depositor, beneficiary, someone, agreementId} = await loadFixture(createAgreementFixture);
             const value = hre.ethers.parseEther("0.01");
             // denied for beneficiary
@@ -82,6 +82,71 @@ import {
               "You are not the depositor."
             );
         });
+    });
+
+    describe("Cancel, reject, approve agreement", () => {
+        it("Depositor should cancel agreement", async () => {
+            const { escrow, owner, depositor, beneficiary, someone, agreementId} = await loadFixture(createAgreementFixture);
+            // check event with args
+            await expect(await escrow.connect(depositor).cancelAgreement(agreementId)).to.emit(escrow, "AgreementCanceled")
+              .withArgs(agreementId);
+            // status check
+            expect(await escrow.getAgreementStatus(agreementId)).to.be.equal(1);
+        });
+
+        it("Beneficiary/others should NOT cancel agreement", async () => {
+            const { escrow, owner, depositor, beneficiary, someone, agreementId} = await loadFixture(createAgreementFixture);
+            // denied for beneficiary
+            await expect(escrow.connect(beneficiary).cancelAgreement(agreementId)).to.revertedWith(
+              "You are not the depositor."
+            );
+            // denied for others
+            await expect(escrow.connect(someone).cancelAgreement(agreementId)).to.revertedWith(
+              "You are not the depositor."
+            );
+        });
+
+        it("Beneficiary should reject agreement", async () => {
+            const { escrow, owner, depositor, beneficiary, someone, agreementId} = await loadFixture(createAgreementFixture);
+            // check event with args
+            await expect(await escrow.connect(beneficiary).rejectAgreement(agreementId)).to.emit(escrow, "AgreementRejected")
+              .withArgs(agreementId);
+            // status check
+            expect(await escrow.getAgreementStatus(agreementId)).to.be.equal(2);
+        });
+
+        it("Depositor/others should NOT reject agreement", async () => {
+            const { escrow, owner, depositor, beneficiary, someone, agreementId} = await loadFixture(createAgreementFixture);
+            // denied for beneficiary
+            await expect(escrow.connect(depositor).rejectAgreement(agreementId)).to.revertedWith(
+              "You are not the beneficiary."
+            );
+            // denied for others
+            await expect(escrow.connect(someone).rejectAgreement(agreementId)).to.revertedWith(
+              "You are not the beneficiary."
+            );
+        });
+
+        it("Beneficiary should approve agreement", async () => {
+            const { escrow, owner, depositor, beneficiary, someone, agreementId} = await loadFixture(createAgreementFixture);
+            // check event with args
+            await expect(await escrow.connect(beneficiary).approveAggrement(agreementId)).to.emit(escrow, "AgreementApproved")
+              .withArgs(agreementId);
+            // status check
+            expect(await escrow.getAgreementStatus(agreementId)).to.be.equal(3);
+        });
+
+        it("Depositor/others should NOT approve agreement", async () => {
+            const { escrow, owner, depositor, beneficiary, someone, agreementId} = await loadFixture(createAgreementFixture);
+            // denied for beneficiary
+            await expect(escrow.connect(depositor).approveAggrement(agreementId)).to.revertedWith(
+              "You are not the beneficiary."
+            );
+            // denied for others
+            await expect(escrow.connect(someone).approveAggrement(agreementId)).to.revertedWith(
+              "You are not the beneficiary."
+            );
+        });     
     });
 
   });
