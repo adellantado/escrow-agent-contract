@@ -215,6 +215,97 @@ contract EscrowAgent is ReentrancyGuard {
         emit AgreementRefunded(agreementId);
     }
 
+    function releaseFunds(uint256 agreementId) public 
+            onlyDepositorOrBeneficiary(agreementId) inStatus(Status.Active, agreementId) {
+        // release funds if there is no dispute
+        if (msg.sender == _escrow[agreementId].beneficiary) {
+            require(block.timestamp >= _escrow[agreementId].deadlineDate + RELEASE_FUNDS_AFTER_DEADLINE, "Funds will be released in 3 days after the deadline");
+        }
+        _escrow[agreementId].status = Status.Closed;
+        emit FundsReleased(agreementId);
+    }
+
+    function raiseDispute(uint256 agreementId) public 
+            onlyDepositor(agreementId) inStatus(Status.Active, agreementId) {
+        _escrow[agreementId].status = Status.Disputed;
+        _disputes[agreementId] = Dispute({
+            arbitrator: payable(0),
+            feePercentage: DEFAULT_ARBITRATOR_PERCENTAGE,
+            feeAmount: 0,
+            agreed: false,
+            startDate: block.timestamp,
+            assignedDate: 0,
+            refundAmount: 0,
+            releasedAmount: 0
+        });
+        emit DisputeRaised(agreementId);
+    }
+
+    function registerArbitrator(uint256 agreementId, address payable arbitrator, uint256 feePercentage) public 
+            onlyDepositorOrBeneficiary(agreementId) inStatus(Status.Disputed, agreementId) {
+        // After AGREE_ON_ARBITRATOR_PERIOD arbitrator forcefully assigned from the pool
+        if (block.timestamp >= _disputes[agreementId].startDate + AGREE_ON_ARBITRATOR_MAX_PERIOD){
+            assignArbitrator(agreementId);
+            return;
+        }
+        require(feePercentage >= 0 && feePercentage <= 1000000, 
+            "Fee percent should be between 0 and 1000000");
+        if (msg.sender == _escrow[agreementId].depositor) {
+            if (_disputes[agreementId].arbitrator != arbitrator) {
+                _disputes[agreementId].agreed = false;
+                _disputes[agreementId].arbitrator = arbitrator;
+                _disputes[agreementId].feePercentage = feePercentage;
+                emit ArbitratorAgreed(agreementId, arbitrator, false);
+            }
+        } else {
+            if (_disputes[agreementId].arbitrator == arbitrator && 
+                    _disputes[agreementId].feePercentage == feePercentage) {
+                // depositor set an arbitrator, beneficiary - agrees
+                _disputes[agreementId].agreed = true;
+                emit ArbitratorAgreed(agreementId, arbitrator, true);
+            } else {
+                revert("The arbitrator address and fees should be the same");
+            }
+        }
+    }
+
+    function assignArbitrator(uint256 agreementId) public 
+            onlyDepositorOrBeneficiary(agreementId) inStatus(Status.Disputed, agreementId) {
+        if (_disputes[agreementId].agreed) {
+            // if arbitrator is agreed on but he/she does nothing after 2 days - trigger arbitrator assigment from the pool
+            require(block.timestamp >= _disputes[agreementId].startDate + AGREE_ON_ARBITRATOR_MAX_PERIOD + RESOLVE_DISPUTE_MAX_PERIOD, "Too early to assign artibrator from the pool");
+        } else {
+            // if arbitrator is not agreed we need to trigger assigment from the pool
+            require(block.timestamp >= _disputes[agreementId].startDate + AGREE_ON_ARBITRATOR_MAX_PERIOD, "Too early to assign artibrator from the pool");
+        }
+        _disputes[agreementId].arbitrator = payable(_arbitratorsPool[0]);
+        _disputes[agreementId].agreed = true;
+        _disputes[agreementId].assignedDate = block.timestamp;
+        emit PoolArbitratorAssigned(agreementId, _arbitratorsPool[0]);
+    }
+
+    function resolveDispute(uint256 agreementId) public
+            onlyDepositorOrBeneficiary(agreementId) inStatus(Status.Disputed, agreementId) {
+        // if pool arbitrator doesn't resolve the dispute - set Unresolved status and split the escrow
+        require(block.timestamp >= _disputes[agreementId].assignedDate + RESOLVE_DISPUTE_MAX_PERIOD, 
+            "You can resolve dispute yourself in 2 days after the pool arbitrator assignment date");
+        _disputes[agreementId].refundAmount = _escrow[agreementId].amount * UNRESOLVED_DISPUTE_REFUND_PERCENTAGE / 1_000_000;
+        _disputes[agreementId].releasedAmount = _escrow[agreementId].amount - _disputes[agreementId].refundAmount;
+        _escrow[agreementId].status = Status.Unresolved;
+        emit DisputeUnresolved(agreementId, UNRESOLVED_DISPUTE_REFUND_PERCENTAGE, _disputes[agreementId].refundAmount);
+    }
+
+    function resolveDispute(uint256 agreementId, uint256 refundPercentage) public
+            onlyArbitrator(agreementId) inStatus(Status.Disputed, agreementId) {
+        require(refundPercentage >= 0 && refundPercentage <= 1000000, "Refunded percent should be between 0 and 1000000");
+        _disputes[agreementId].feeAmount = _escrow[agreementId].amount *  _disputes[agreementId].feePercentage / 1_000_000;
+        _disputes[agreementId].refundAmount = (_escrow[agreementId].amount - _disputes[agreementId].feeAmount) * refundPercentage / 1_000_000;
+        _disputes[agreementId].releasedAmount = _escrow[agreementId].amount - _disputes[agreementId].feeAmount - _disputes[agreementId].refundAmount;
+        _escrow[agreementId].status = Status.Resolved;
+        emit DisputeResolved(agreementId, refundPercentage, _disputes[agreementId].feeAmount, 
+            _disputes[agreementId].refundAmount, _disputes[agreementId].releasedAmount);
+    }
+
     function withdrawFunds(uint256 agreementId) public payable nonReentrant {
         Agreement memory agreement = _escrow[agreementId];
         if (agreement.beneficiary == msg.sender) {
@@ -262,97 +353,6 @@ contract EscrowAgent is ReentrancyGuard {
             }
         }
         revert("You cannot widthraw funds");
-    }
-
-    function registerArbitrator(uint256 agreementId, address payable arbitrator, uint256 feePercentage) public 
-            onlyDepositorOrBeneficiary(agreementId) inStatus(Status.Disputed, agreementId) {
-        // After AGREE_ON_ARBITRATOR_PERIOD arbitrator forcefully assigned from the pool
-        if (block.timestamp >= _disputes[agreementId].startDate + AGREE_ON_ARBITRATOR_MAX_PERIOD){
-            assignArbitrator(agreementId);
-            return;
-        }
-        require(feePercentage >= 0 && feePercentage <= 1000000, 
-            "Fee percent should be between 0 and 1000000");
-        if (msg.sender == _escrow[agreementId].depositor) {
-            if (_disputes[agreementId].arbitrator != arbitrator) {
-                _disputes[agreementId].agreed = false;
-                _disputes[agreementId].arbitrator = arbitrator;
-                _disputes[agreementId].feePercentage = feePercentage;
-                emit ArbitratorAgreed(agreementId, arbitrator, false);
-            }
-        } else {
-            if (_disputes[agreementId].arbitrator == arbitrator && 
-                    _disputes[agreementId].feePercentage == feePercentage) {
-                // depositor set an arbitrator, beneficiary - agrees
-                _disputes[agreementId].agreed = true;
-                emit ArbitratorAgreed(agreementId, arbitrator, true);
-            } else {
-                revert("The arbitrator address and fees should be the same");
-            }
-        }
-    }
-
-    function assignArbitrator(uint256 agreementId) public 
-            onlyDepositorOrBeneficiary(agreementId) inStatus(Status.Disputed, agreementId) {
-        if (_disputes[agreementId].agreed) {
-            // if arbitrator is agreed on but he/she does nothing after 2 days - trigger arbitrator assigment from the pool
-            require(block.timestamp >= _disputes[agreementId].startDate + AGREE_ON_ARBITRATOR_MAX_PERIOD + RESOLVE_DISPUTE_MAX_PERIOD, "Too early to assign artibrator from the pool");
-        } else {
-            // if arbitrator is not agreed we need to trigger assigment from the pool
-            require(block.timestamp >= _disputes[agreementId].startDate + AGREE_ON_ARBITRATOR_MAX_PERIOD, "Too early to assign artibrator from the pool");
-        }
-        _disputes[agreementId].arbitrator = payable(_arbitratorsPool[0]);
-        _disputes[agreementId].agreed = true;
-        _disputes[agreementId].assignedDate = block.timestamp;
-        emit PoolArbitratorAssigned(agreementId, _arbitratorsPool[0]);
-    }
-
-    function releaseFunds(uint256 agreementId) public 
-            onlyDepositorOrBeneficiary(agreementId) inStatus(Status.Active, agreementId) {
-        // release funds if there is no dispute
-        if (msg.sender == _escrow[agreementId].beneficiary) {
-            require(block.timestamp >= _escrow[agreementId].deadlineDate + RELEASE_FUNDS_AFTER_DEADLINE, "Funds will be released in 3 days after the deadline");
-        }
-        _escrow[agreementId].status = Status.Closed;
-        emit FundsReleased(agreementId);
-    }
-
-    function raiseDispute(uint256 agreementId) public 
-            onlyDepositor(agreementId) inStatus(Status.Active, agreementId) {
-        _escrow[agreementId].status = Status.Disputed;
-        _disputes[agreementId] = Dispute({
-            arbitrator: payable(0),
-            feePercentage: DEFAULT_ARBITRATOR_PERCENTAGE,
-            feeAmount: 0,
-            agreed: false,
-            startDate: block.timestamp,
-            assignedDate: 0,
-            refundAmount: 0,
-            releasedAmount: 0
-        });
-        emit DisputeRaised(agreementId);
-    }
-
-    function resolveDispute(uint256 agreementId) public
-            onlyDepositorOrBeneficiary(agreementId) inStatus(Status.Disputed, agreementId) {
-        // if pool arbitrator doesn't resolve the dispute - set Unresolved status and split the escrow
-        require(block.timestamp >= _disputes[agreementId].assignedDate + RESOLVE_DISPUTE_MAX_PERIOD, 
-            "You can resolve dispute yourself in 2 days after the pool arbitrator assignment date");
-        _disputes[agreementId].refundAmount = _escrow[agreementId].amount * UNRESOLVED_DISPUTE_REFUND_PERCENTAGE / 1_000_000;
-        _disputes[agreementId].releasedAmount = _escrow[agreementId].amount - _disputes[agreementId].refundAmount;
-        _escrow[agreementId].status = Status.Unresolved;
-        emit DisputeUnresolved(agreementId, UNRESOLVED_DISPUTE_REFUND_PERCENTAGE, _disputes[agreementId].refundAmount);
-    }
-
-    function resolveDispute(uint256 agreementId, uint256 refundPercentage) public
-            onlyArbitrator(agreementId) inStatus(Status.Disputed, agreementId) {
-        require(refundPercentage >= 0 && refundPercentage <= 1000000, "Refunded percent should be between 0 and 1000000");
-        _disputes[agreementId].feeAmount = _escrow[agreementId].amount *  _disputes[agreementId].feePercentage / 1_000_000;
-        _disputes[agreementId].refundAmount = (_escrow[agreementId].amount - _disputes[agreementId].feeAmount) * refundPercentage / 1_000_000;
-        _disputes[agreementId].releasedAmount = _escrow[agreementId].amount - _disputes[agreementId].feeAmount - _disputes[agreementId].refundAmount;
-        _escrow[agreementId].status = Status.Resolved;
-        emit DisputeResolved(agreementId, refundPercentage, _disputes[agreementId].feeAmount, 
-            _disputes[agreementId].refundAmount, _disputes[agreementId].releasedAmount);
     }
 
     function getWithdrawBalance(uint256 agreementId) external view 
