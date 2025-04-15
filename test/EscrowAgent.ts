@@ -157,4 +157,63 @@ import {
         });     
     });
 
+    describe("Close agreement", () => {
+
+        it("Beneficiary should refund agreement", async () => {
+            const { escrow, owner, depositor, beneficiary, someone, agreementId} = await loadFixture(activeAgreementFixture);
+            // check agreement refunded event
+            await expect(await escrow.connect(beneficiary).refundAgreement(agreementId)).to.emit(escrow, "AgreementRefunded")
+              .withArgs(agreementId);
+            // status check
+            expect(await escrow.getAgreementStatus(agreementId)).to.be.equal(4);
+        });
+
+        it("Depositor/others should NOT refund agreement", async () => {
+            const { escrow, owner, depositor, beneficiary, someone, agreementId} = await loadFixture(activeAgreementFixture);
+            // denied for depositor
+            await expect(escrow.connect(depositor).refundAgreement(agreementId)).to.revertedWith(
+              "You are not the beneficiary."
+            );
+            // denied for others
+            await expect(escrow.connect(someone).refundAgreement(agreementId)).to.revertedWith(
+              "You are not the beneficiary."
+            );
+        }); 
+
+        it("Depositor should NOT close inactive agreement", async () => {
+            const { escrow, owner, depositor, beneficiary, someone, agreementId } = await loadFixture(createAgreementFixture);
+            await expect(escrow.connect(depositor).releaseFunds(agreementId)).to.revertedWith(
+              "The agreement is in a wrong status."
+            );
+        });
+
+        it("Depositor should close agreement", async () => {
+            const { escrow, owner, depositor, beneficiary, someone, agreementId} = await loadFixture(activeAgreementFixture);
+            // check funds released event
+            await expect(escrow.connect(depositor).releaseFunds(agreementId)).to.emit(escrow, "FundsReleased")
+              .withArgs(agreementId);
+            // status check
+            expect(await escrow.getAgreementStatus(agreementId)).to.be.equal(5);
+        });
+
+        it("Beneficiary should NOT close agreement before the deadline", async () => {
+            const { escrow, owner, depositor, beneficiary, someone, agreementId} = await loadFixture(activeAgreementFixture);
+            await expect(escrow.connect(beneficiary).releaseFunds(agreementId)).to.revertedWith(
+              "Funds will be released in 3 days after the deadline"
+            );
+        });
+
+        it("Beneficiary should close agreement after the deadline + 3 days", async () => {
+            const { escrow, owner, depositor, beneficiary, someone, agreementId} = await loadFixture(activeAgreementFixture);
+            const defaultDeadline = Number(await escrow.DEFAULT_DEADLINE_DATE());
+            const threeDays = Number(await escrow.RELEASE_FUNDS_AFTER_DEADLINE());
+            await time.increase(defaultDeadline + threeDays);
+            // check funds released event
+            await expect(escrow.connect(beneficiary).releaseFunds(agreementId)).to.emit(escrow, "FundsReleased")
+              .withArgs(agreementId);
+            // status check
+            expect(await escrow.getAgreementStatus(agreementId)).to.be.equal(5);
+        });
+    });
+
   });
