@@ -25,13 +25,20 @@ import {
       return { escrow, owner, depositor, beneficiary, someone, agreementId };
     }
 
+    async function activeAgreementFixture() {
+      const { escrow, owner, depositor, beneficiary, someone, agreementId } = await loadFixture(createAgreementFixture);
+      await escrow.connect(beneficiary).approveAgreement(agreementId);
+      return { escrow, owner, depositor, beneficiary, someone, agreementId };
+    }
+
     describe("Create agreement", () => {
+
         it("Should create a new agreement", async () => {
             const { escrow, owner, depositor, beneficiary } = await loadFixture(deployEscrowFixture);
             const cid = "0xB45165ED3CD437B9FFAD02A2AAD22A4DDC69162470E2622982889CE5826F6E3D";
             const value = hre.ethers.parseEther("0.1");
             const agreementId = 1;
-            // check event with args
+            // check agreement created event
             const resp = await escrow.connect(depositor)["createAgreement(address,string)"](beneficiary, cid, {value: value});
             await expect(resp).to.emit(escrow, "AgreementCreated")
                 .withArgs(depositor, beneficiary, agreementId, value, anyValue, cid);
@@ -42,7 +49,7 @@ import {
             );
             // status Funded
             expect(await escrow.getAgreementStatus(agreementId)).to.be.equal(0);
-            const defaultDeadline = 30 * 24 * 60 * 60;
+            const defaultDeadline = Number(await escrow.DEFAULT_DEADLINE_DATE());
             const start = Number(await time.latest());
             const end = Number(await time.increase(defaultDeadline));
             // check details
@@ -57,7 +64,7 @@ import {
         it("Depositor should add funds to an existing agreement", async () => {
             const { escrow, owner, depositor, beneficiary, someone, agreementId} = await loadFixture(createAgreementFixture);
             const value = hre.ethers.parseEther("0.01");
-            // check event with args
+            // check funds added event
             const resp = await escrow.connect(depositor).addFunds(agreementId, {value: value});
             await expect(resp).to.emit(escrow, "FundsAdded")
                 .withArgs(agreementId, depositor, value, hre.ethers.parseEther("0.11"));
@@ -85,9 +92,10 @@ import {
     });
 
     describe("Cancel, reject, approve agreement", () => {
+
         it("Depositor should cancel agreement", async () => {
             const { escrow, owner, depositor, beneficiary, someone, agreementId} = await loadFixture(createAgreementFixture);
-            // check event with args
+            // check agreement canceled event
             await expect(await escrow.connect(depositor).cancelAgreement(agreementId)).to.emit(escrow, "AgreementCanceled")
               .withArgs(agreementId);
             // status check
@@ -108,7 +116,7 @@ import {
 
         it("Beneficiary should reject agreement", async () => {
             const { escrow, owner, depositor, beneficiary, someone, agreementId} = await loadFixture(createAgreementFixture);
-            // check event with args
+            // check agreement rejected event
             await expect(await escrow.connect(beneficiary).rejectAgreement(agreementId)).to.emit(escrow, "AgreementRejected")
               .withArgs(agreementId);
             // status check
@@ -117,7 +125,7 @@ import {
 
         it("Depositor/others should NOT reject agreement", async () => {
             const { escrow, owner, depositor, beneficiary, someone, agreementId} = await loadFixture(createAgreementFixture);
-            // denied for beneficiary
+            // denied for depositor
             await expect(escrow.connect(depositor).rejectAgreement(agreementId)).to.revertedWith(
               "You are not the beneficiary."
             );
@@ -129,8 +137,8 @@ import {
 
         it("Beneficiary should approve agreement", async () => {
             const { escrow, owner, depositor, beneficiary, someone, agreementId} = await loadFixture(createAgreementFixture);
-            // check event with args
-            await expect(await escrow.connect(beneficiary).approveAggrement(agreementId)).to.emit(escrow, "AgreementApproved")
+            // check agreement approved event
+            await expect(await escrow.connect(beneficiary).approveAgreement(agreementId)).to.emit(escrow, "AgreementApproved")
               .withArgs(agreementId);
             // status check
             expect(await escrow.getAgreementStatus(agreementId)).to.be.equal(3);
@@ -138,12 +146,12 @@ import {
 
         it("Depositor/others should NOT approve agreement", async () => {
             const { escrow, owner, depositor, beneficiary, someone, agreementId} = await loadFixture(createAgreementFixture);
-            // denied for beneficiary
-            await expect(escrow.connect(depositor).approveAggrement(agreementId)).to.revertedWith(
+            // denied for depositor
+            await expect(escrow.connect(depositor).approveAgreement(agreementId)).to.revertedWith(
               "You are not the beneficiary."
             );
             // denied for others
-            await expect(escrow.connect(someone).approveAggrement(agreementId)).to.revertedWith(
+            await expect(escrow.connect(someone).approveAgreement(agreementId)).to.revertedWith(
               "You are not the beneficiary."
             );
         });     
