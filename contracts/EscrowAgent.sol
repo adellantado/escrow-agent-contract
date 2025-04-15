@@ -197,7 +197,7 @@ contract EscrowAgent is ReentrancyGuard {
         emit AgreementCanceled(agreementId);
     }
 
-    function approveAggrement(uint256 agreementId) public 
+    function approveAgreement(uint256 agreementId) public 
             onlyBeneficiary(agreementId) inStatus(Status.Funded, agreementId) {
         _escrow[agreementId].status = Status.Active;
         emit AgreementApproved(agreementId);
@@ -227,6 +227,7 @@ contract EscrowAgent is ReentrancyGuard {
 
     function raiseDispute(uint256 agreementId) public 
             onlyDepositor(agreementId) inStatus(Status.Active, agreementId) {
+        require(block.timestamp > _escrow[agreementId].deadlineDate, "You cannot raise dispute before the deadline");
         _escrow[agreementId].status = Status.Disputed;
         _disputes[agreementId] = Dispute({
             arbitrator: payable(0),
@@ -287,7 +288,7 @@ contract EscrowAgent is ReentrancyGuard {
     function resolveDispute(uint256 agreementId) public
             onlyDepositorOrBeneficiary(agreementId) inStatus(Status.Disputed, agreementId) {
         // if pool arbitrator doesn't resolve the dispute - set Unresolved status and split the escrow
-        require(block.timestamp >= _disputes[agreementId].assignedDate + RESOLVE_DISPUTE_MAX_PERIOD, 
+        require(_disputes[agreementId].assignedDate != 0 && block.timestamp >= _disputes[agreementId].assignedDate + RESOLVE_DISPUTE_MAX_PERIOD, 
             "You can resolve dispute yourself in 2 days after the pool arbitrator assignment date");
         _disputes[agreementId].refundAmount = _escrow[agreementId].amount * UNRESOLVED_DISPUTE_REFUND_PERCENTAGE / 1_000_000;
         _disputes[agreementId].releasedAmount = _escrow[agreementId].amount - _disputes[agreementId].refundAmount;
