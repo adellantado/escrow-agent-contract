@@ -16,6 +16,7 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 // - register arbitrators to the pool
 // - erc20 support
 // - min deposited funds
+// - check zero address
 // 
 contract EscrowAgent is ReentrancyGuard {
 
@@ -118,6 +119,13 @@ contract EscrowAgent is ReentrancyGuard {
         // beneficiary's funds
         uint256 releasedAmount;
     }
+
+    // if beneficiary agrees on arbitrator with wrong address or fee percentage
+    error WrongArbitrator(address oldArbitrator, address newArbitrator, uint256 oldFeePercentage, uint256 newFeePercentage);
+    // can't show balance
+    error NoBalance(address sender, Status status);
+    // can't withdraw funds
+    error WithdrawProhibited(address sender, Status status);
 
     event AgreementCreated(address indexed depositor, address indexed beneficiary, 
         uint256 indexed agreementId, uint256 amount, uint256 deadlineDate, string detailsHash);
@@ -259,14 +267,14 @@ contract EscrowAgent is ReentrancyGuard {
                 emit ArbitratorAgreed(agreementId, arbitrator, false);
             }
         } else {
-            if (_disputes[agreementId].arbitrator == arbitrator && 
-                    _disputes[agreementId].feePercentage == feePercentage) {
-                // depositor set an arbitrator, beneficiary - agrees
-                _disputes[agreementId].agreed = true;
-                emit ArbitratorAgreed(agreementId, arbitrator, true);
-            } else {
-                revert("The arbitrator address and fees should be the same");
+            if (_disputes[agreementId].arbitrator != arbitrator ||
+                    _disputes[agreementId].feePercentage != feePercentage) {
+                revert WrongArbitrator(_disputes[agreementId].arbitrator, arbitrator,
+                    _disputes[agreementId].feePercentage, feePercentage);
             }
+            // depositor set an arbitrator, beneficiary - agrees
+            _disputes[agreementId].agreed = true;
+            emit ArbitratorAgreed(agreementId, arbitrator, true);
         }
     }
 
@@ -353,7 +361,7 @@ contract EscrowAgent is ReentrancyGuard {
                 emit FundsWithdrawed(agreementId, msg.sender, feeAmount);
             }
         }
-        revert("You cannot widthraw funds");
+        revert WithdrawProhibited(msg.sender, agreement.status);
     }
 
     function getWithdrawBalance(uint256 agreementId) external view 
@@ -382,7 +390,7 @@ contract EscrowAgent is ReentrancyGuard {
                 return _disputes[agreementId].feeAmount;
             }
         }
-        revert("You cannot widthraw funds");
+        revert NoBalance(msg.sender, agreement.status);
     }
 
     function getAgreementDetails(uint256 agreementId) external view 

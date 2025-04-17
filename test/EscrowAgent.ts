@@ -275,8 +275,8 @@ import {
             await expect(await escrow.connect(depositor).registerArbitrator(agreementId, arbitrator1, feePercentage)).to.emit(escrow, "ArbitratorAgreed")
               .withArgs(agreementId, arbitrator1, false);
             // check revert on wrong address
-            await expect(escrow.connect(beneficiary).registerArbitrator(agreementId, arbitrator2, feePercentage)).to.revertedWith(
-              "The arbitrator address and fees should be the same"
+            await expect(escrow.connect(beneficiary).registerArbitrator(agreementId, arbitrator2, feePercentage)).to.revertedWithCustomError(
+              escrow, "WrongArbitrator"
             );
         });
 
@@ -289,8 +289,8 @@ import {
             await expect(await escrow.connect(depositor).registerArbitrator(agreementId, arbitrator, feePercentage1)).to.emit(escrow, "ArbitratorAgreed")
               .withArgs(agreementId, arbitrator, false);
             // check revert on wrong fees
-            await expect(escrow.connect(beneficiary).registerArbitrator(agreementId, arbitrator, feePercentage2)).to.revertedWith(
-              "The arbitrator address and fees should be the same"
+            await expect(escrow.connect(beneficiary).registerArbitrator(agreementId, arbitrator, feePercentage2)).to.revertedWithCustomError(
+              escrow, "WrongArbitrator"
             );
         });
 
