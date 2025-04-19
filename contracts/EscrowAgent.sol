@@ -324,18 +324,21 @@ contract EscrowAgent is ReentrancyGuard {
                 _escrow[agreementId].amount = 0;
                 agreement.beneficiary.transfer(amount);
                 emit FundsWithdrawed(agreementId, msg.sender, amount);
+                return;
             } else if (agreement.status == Status.Resolved) {
                 require(_disputes[agreementId].releasedAmount > 0, "Funds are not available");
                 uint256 releasedAmount = _disputes[agreementId].releasedAmount;
                 _disputes[agreementId].releasedAmount = 0;
                 agreement.beneficiary.transfer(releasedAmount);
                 emit FundsWithdrawed(agreementId, msg.sender, releasedAmount);
+                return;
             } else if (agreement.status == Status.Unresolved) {
                 require(_disputes[agreementId].releasedAmount > 0, "Funds are not available");
                 uint256 releasedAmount = _disputes[agreementId].releasedAmount;
                 _disputes[agreementId].releasedAmount = 0;
                 agreement.beneficiary.transfer(releasedAmount);
                 emit FundsWithdrawed(agreementId, msg.sender, releasedAmount);
+                return;
             }
         } else if (agreement.depositor == msg.sender) {
             if (agreement.status == Status.Canceled || agreement.status == Status.Rejected || 
@@ -345,12 +348,14 @@ contract EscrowAgent is ReentrancyGuard {
                 _escrow[agreementId].amount = 0;
                 agreement.depositor.transfer(amount);
                 emit FundsWithdrawed(agreementId, msg.sender, amount);
+                return;
             } else if(agreement.status == Status.Resolved || agreement.status == Status.Unresolved) {
                 require(_disputes[agreementId].refundAmount > 0, "Funds are not available");
                 uint256 refundAmount = _disputes[agreementId].refundAmount;
                 _disputes[agreementId].refundAmount = 0;
                 agreement.depositor.transfer(refundAmount);
                 emit FundsWithdrawed(agreementId, msg.sender, refundAmount);
+                return;
             }
         } else if (_disputes[agreementId].arbitrator == msg.sender) {
             if (agreement.status == Status.Resolved) {
@@ -359,6 +364,7 @@ contract EscrowAgent is ReentrancyGuard {
                 _disputes[agreementId].feeAmount = 0;
                 _disputes[agreementId].arbitrator.transfer(feeAmount);
                 emit FundsWithdrawed(agreementId, msg.sender, feeAmount);
+                return;
             }
         }
         revert WithdrawProhibited(msg.sender, agreement.status);
