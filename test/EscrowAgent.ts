@@ -22,13 +22,13 @@ import {
       const value = hre.ethers.parseEther("0.1");
       await escrow.connect(depositor)["createAgreement(address,string)"](beneficiary, cid, {value: value});
       const agreementId = 1;
-      return { escrow, owner, depositor, beneficiary, someone, agreementId };
+      return { escrow, owner, depositor, beneficiary, someone, agreementId, value };
     }
 
     async function activeAgreementFixture() {
-      const { escrow, owner, depositor, beneficiary, someone, agreementId } = await loadFixture(createAgreementFixture);
+      const { escrow, owner, depositor, beneficiary, someone, agreementId, value } = await loadFixture(createAgreementFixture);
       await escrow.connect(beneficiary).approveAgreement(agreementId);
-      return { escrow, owner, depositor, beneficiary, someone, agreementId };
+      return { escrow, owner, depositor, beneficiary, someone, agreementId, value };
     }
 
     describe("Create agreement", () => {
@@ -403,6 +403,126 @@ import {
               "You can resolve dispute yourself in 2 days after the pool arbitrator assignment date"
             );
         });
+    });
+
+    describe("Depositor funds withdrawal", () => {
+
+        it("Depositor should withdraw funds after canceling agreement", async () => {
+            const { escrow, owner, depositor, beneficiary, someone, agreementId, value } = await loadFixture(createAgreementFixture);
+            // cancel the agreement
+            await escrow.connect(depositor).cancelAgreement(agreementId);
+            // check agreement status
+            expect(await escrow.getAgreementStatus(agreementId)).to.equal(1);
+            // withdraw funds
+            const resp = await escrow.connect(depositor).withdrawFunds(agreementId);
+            // check event
+            await expect(resp).to.emit(escrow, "FundsWithdrawed")
+                .withArgs(agreementId, depositor, value);
+            // check funds moved
+            await expect(resp).to.changeEtherBalances(
+                [depositor, escrow],
+                [value, -value]
+            );
+            // can't widthdraw twice
+            await expect(escrow.connect(depositor).withdrawFunds(agreementId)).to.be.revertedWith(
+              "Funds are not available"
+            );
+        });
+
+        it("Depositor should withdraw funds after agreement is rejected", async () => {
+          const { escrow, owner, depositor, beneficiary, someone, agreementId, value } = await loadFixture(createAgreementFixture);
+            // reject the agreement
+            await escrow.connect(beneficiary).rejectAgreement(agreementId);
+            // check agreement status
+            expect(await escrow.getAgreementStatus(agreementId)).to.equal(2);
+            // withdraw funds
+            const resp = await escrow.connect(depositor).withdrawFunds(agreementId);
+            // check event
+            await expect(resp).to.emit(escrow, "FundsWithdrawed")
+                .withArgs(agreementId, depositor, value);
+            // check funds moved
+            await expect(resp).to.changeEtherBalances(
+                [depositor, escrow],
+                [value, -value]
+            );
+            // can't widthdraw twice
+            await expect(escrow.connect(depositor).withdrawFunds(agreementId)).to.be.revertedWith(
+              "Funds are not available"
+            );
+        });
+
+        it("Depositor should withdraw funds after agreement is refunded", async () => {
+          const { escrow, owner, depositor, beneficiary, someone, agreementId, value } = await loadFixture(activeAgreementFixture);
+            // refund the agreement
+            await escrow.connect(beneficiary).refundAgreement(agreementId);
+            // check agreement status
+            expect(await escrow.getAgreementStatus(agreementId)).to.equal(4);
+            // withdraw funds
+            const resp = await escrow.connect(depositor).withdrawFunds(agreementId);
+            // check event
+            await expect(resp).to.emit(escrow, "FundsWithdrawed")
+                .withArgs(agreementId, depositor, value);
+            // check funds moved
+            await expect(resp).to.changeEtherBalances(
+                [depositor, escrow],
+                [value, -value]
+            );
+            // can't widthdraw twice
+            await expect(escrow.connect(depositor).withdrawFunds(agreementId)).to.be.revertedWith(
+              "Funds are not available"
+            );
+        });
+
+        it("Non-depositor should NOT withdraw funds after canceling agreement", async () => {
+            const { escrow, owner, depositor, beneficiary, someone, agreementId } = await loadFixture(createAgreementFixture);
+            // cancel the agreement first
+            await escrow.connect(depositor).cancelAgreement(agreementId);
+            // try to withdraw as beneficiary
+            await expect(escrow.connect(beneficiary).withdrawFunds(agreementId)).to.be.revertedWithCustomError(
+                escrow, "WithdrawProhibited"
+            );
+            // try to withdraw as someone else
+            await expect(escrow.connect(someone).withdrawFunds(agreementId)).to.be.revertedWithCustomError(
+                escrow, "WithdrawProhibited"
+            );
+        });
+
+        it("Non-depositor should NOT withdraw funds after rejecting agreement", async () => {
+            const { escrow, owner, depositor, beneficiary, someone, agreementId } = await loadFixture(createAgreementFixture);
+            // reject the agreement first
+            await escrow.connect(beneficiary).rejectAgreement(agreementId);
+            // try to withdraw as beneficiary
+            await expect(escrow.connect(beneficiary).withdrawFunds(agreementId)).to.be.revertedWithCustomError(
+                escrow, "WithdrawProhibited"
+            );
+            // try to withdraw as someone else
+            await expect(escrow.connect(someone).withdrawFunds(agreementId)).to.be.revertedWithCustomError(
+                escrow, "WithdrawProhibited"
+            );
+        });
+
+        it("Non-depositor should NOT withdraw funds after refunding agreement", async () => {
+            const { escrow, owner, depositor, beneficiary, someone, agreementId } = await loadFixture(activeAgreementFixture);
+            // refund the agreement first
+            await escrow.connect(beneficiary).refundAgreement(agreementId);
+            // try to withdraw as beneficiary
+            await expect(escrow.connect(beneficiary).withdrawFunds(agreementId)).to.be.revertedWithCustomError(
+                escrow, "WithdrawProhibited"
+            );
+            // try to withdraw as someone else
+            await expect(escrow.connect(someone).withdrawFunds(agreementId)).to.be.revertedWithCustomError(
+                escrow, "WithdrawProhibited"
+            );
+        });
+
+        it("Depositor should NOT withdraw funds from active agreement", async () => {
+            const { escrow, owner, depositor, beneficiary, someone, agreementId } = await loadFixture(createAgreementFixture);
+            // try to withdraw     
+            await expect(escrow.connect(depositor).withdrawFunds(agreementId)).to.be.revertedWithCustomError(
+                escrow, "WithdrawProhibited"
+            );
+        });
+
     });
 
   });
