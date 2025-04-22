@@ -16,7 +16,6 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 // - register arbitrators to the pool
 // - erc20 support
 // - min deposited funds
-// - check zero address
 // 
 contract EscrowAgent is ReentrancyGuard {
 
@@ -170,6 +169,11 @@ contract EscrowAgent is ReentrancyGuard {
         _;
     }
 
+    modifier checkAddress(address user) {
+        require(user != address(0), "Address is zero");
+        _;
+    }
+
     constructor() {
         _arbitratorsPool.push(msg.sender);
     }
@@ -178,7 +182,7 @@ contract EscrowAgent is ReentrancyGuard {
         createAgreement(_beneficiary, detailsHash, block.timestamp + DEFAULT_DEADLINE_DATE);
     }
 
-    function createAgreement(address payable _beneficiary, string memory detailsHash, uint256 deadlineDate) public payable {
+    function createAgreement(address payable _beneficiary, string memory detailsHash, uint256 deadlineDate) public payable checkAddress(_beneficiary) {
         _agreementCounter++;
         // TODO: multiple agreements
         emit AgreementCreated(msg.sender, _beneficiary, _agreementCounter, msg.value, deadlineDate, detailsHash);
@@ -251,7 +255,7 @@ contract EscrowAgent is ReentrancyGuard {
     }
 
     function registerArbitrator(uint256 agreementId, address payable arbitrator, uint256 feePercentage) public 
-            onlyDepositorOrBeneficiary(agreementId) inStatus(Status.Disputed, agreementId) {
+            onlyDepositorOrBeneficiary(agreementId) checkAddress(arbitrator) inStatus(Status.Disputed, agreementId) {
         // After AGREE_ON_ARBITRATOR_PERIOD arbitrator forcefully assigned from the pool
         if (block.timestamp >= _disputes[agreementId].startDate + AGREE_ON_ARBITRATOR_MAX_PERIOD){
             assignArbitrator(agreementId);
