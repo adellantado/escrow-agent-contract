@@ -13,9 +13,10 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 // * Withdraw funds from escrow
 // TODO:
 // - multiple agreements or escrow factory
-// - register arbitrators to the pool
 // - erc20 support
 // - min deposited funds
+// - optimize gas
+// - randomly select arbitrator from the pool
 // 
 contract EscrowAgent is ReentrancyGuard {
 
@@ -26,9 +27,12 @@ contract EscrowAgent is ReentrancyGuard {
     uint256 public constant UNRESOLVED_DISPUTE_REFUND_PERCENTAGE = 500000;
     uint256 public constant DEFAULT_ARBITRATOR_PERCENTAGE = 10000;
     
+    address internal _owner;
     mapping (uint256 => Agreement) internal _escrow;
     mapping (uint256 => Dispute) internal _disputes;
     address[] internal _arbitratorsPool;
+    // active agreements for each arbitrator from the pool
+    mapping (address => uint256[]) internal _assignedAgreements;
 
     uint256 private _agreementCounter;
 
@@ -125,6 +129,10 @@ contract EscrowAgent is ReentrancyGuard {
     error NoBalance(address sender, Status status);
     // can't withdraw funds
     error WithdrawProhibited(address sender, Status status);
+    // arbitrator is in the pool
+    error ArbitratorInPool(address arbitrator);
+    // arbitrator is not in the pool
+    error ArbitratorNotInPool(address arbitrator);
 
     event AgreementCreated(address indexed depositor, address indexed beneficiary, 
         uint256 indexed agreementId, uint256 amount, uint256 deadlineDate, string detailsHash);
@@ -141,6 +149,8 @@ contract EscrowAgent is ReentrancyGuard {
     event DisputeUnresolved(uint256 indexed agreementId, uint256 refundPercentage, uint256 refundAmount);
     event ArbitratorAgreed(uint256 indexed agreementId, address indexed arbitrator, bool agreed);
     event PoolArbitratorAssigned(uint256 indexed agreementId, address indexed arbitrator);
+    event PoolArbitratorAdded(address indexed arbitrator);
+    event PoolArbitratorRemoved(address indexed arbitrator);
 
     modifier onlyDepositor(uint256 agreementId) {
         require(msg.sender == address(_escrow[agreementId].depositor), "You are not the depositor.");
@@ -164,6 +174,11 @@ contract EscrowAgent is ReentrancyGuard {
         _;
     }
 
+    modifier onlyOwner() {
+        require(msg.sender == _owner, "You are not the owner.");
+        _;
+    }
+
     modifier inStatus(Status status, uint256 agreementId) {
         require(_escrow[agreementId].status == status, "The agreement is in a wrong status.");
         _;
@@ -175,7 +190,7 @@ contract EscrowAgent is ReentrancyGuard {
     }
 
     constructor() {
-        _arbitratorsPool.push(msg.sender);
+        _owner = msg.sender;
     }
 
     function createAgreement(address payable _beneficiary, string memory detailsHash) public payable {
@@ -294,6 +309,7 @@ contract EscrowAgent is ReentrancyGuard {
         _disputes[agreementId].arbitrator = payable(_arbitratorsPool[0]);
         _disputes[agreementId].agreed = true;
         _disputes[agreementId].assignedDate = block.timestamp;
+        _assignedAgreements[_arbitratorsPool[0]].push(agreementId);
         emit PoolArbitratorAssigned(agreementId, _arbitratorsPool[0]);
     }
 
@@ -305,6 +321,10 @@ contract EscrowAgent is ReentrancyGuard {
         _disputes[agreementId].refundAmount = _escrow[agreementId].amount * UNRESOLVED_DISPUTE_REFUND_PERCENTAGE / 1_000_000;
         _disputes[agreementId].releasedAmount = _escrow[agreementId].amount - _disputes[agreementId].refundAmount;
         _escrow[agreementId].status = Status.Unresolved;
+        // check and remove agreement from assigned to the pool arbitrator
+        if (_assignedAgreements[_disputes[agreementId].arbitrator].length > 0) {
+            removeAgreementFromAssigned(_disputes[agreementId].arbitrator, agreementId);
+        }
         emit DisputeUnresolved(agreementId, UNRESOLVED_DISPUTE_REFUND_PERCENTAGE, _disputes[agreementId].refundAmount);
     }
 
@@ -315,8 +335,47 @@ contract EscrowAgent is ReentrancyGuard {
         _disputes[agreementId].refundAmount = (_escrow[agreementId].amount - _disputes[agreementId].feeAmount) * refundPercentage / 1_000_000;
         _disputes[agreementId].releasedAmount = _escrow[agreementId].amount - _disputes[agreementId].feeAmount - _disputes[agreementId].refundAmount;
         _escrow[agreementId].status = Status.Resolved;
+        // check and remove agreement from assigned to the pool arbitrator
+        if (_assignedAgreements[_disputes[agreementId].arbitrator].length > 0) {
+            removeAgreementFromAssigned(_disputes[agreementId].arbitrator, agreementId);
+        }
         emit DisputeResolved(agreementId, refundPercentage, _disputes[agreementId].feeAmount, 
             _disputes[agreementId].refundAmount, _disputes[agreementId].releasedAmount);
+    }
+
+    function addPoolArbitrator(address arbitrator) public onlyOwner checkAddress(arbitrator) {
+        require(_assignedAgreements[arbitrator].length == 0, "Arbitrator already in the pool");
+        for (uint256 i = 0; i < _arbitratorsPool.length; i++) {
+            if (_arbitratorsPool[i] == arbitrator) {
+                revert ArbitratorInPool(arbitrator);
+            }
+        }
+        _arbitratorsPool.push(arbitrator);
+        emit PoolArbitratorAdded(arbitrator);
+    }
+
+    function removePoolArbitrator(address arbitrator) public onlyOwner checkAddress(arbitrator) {
+        require(_assignedAgreements[arbitrator].length == 0, "Arbitrator has active agreements");
+        for (uint256 i = 0; i < _arbitratorsPool.length; i++) {
+            if (_arbitratorsPool[i] == arbitrator) {
+                _arbitratorsPool[i] = _arbitratorsPool[_arbitratorsPool.length - 1];
+                _arbitratorsPool.pop();
+                delete _assignedAgreements[arbitrator];
+                emit PoolArbitratorRemoved(arbitrator);
+                return;
+            }
+        }
+        revert ArbitratorNotInPool(arbitrator);
+    }
+
+    function removeAgreementFromAssigned(address arbitrator, uint256 agreementId) private {
+        for (uint256 i = 0; i < _assignedAgreements[arbitrator].length; i++) {
+            if (_assignedAgreements[arbitrator][i] == agreementId) {
+                _assignedAgreements[arbitrator][i] = _assignedAgreements[arbitrator][_assignedAgreements[arbitrator].length - 1];
+                _assignedAgreements[arbitrator].pop();
+                break;
+            }
+        }
     }
 
     function withdrawFunds(uint256 agreementId) public payable nonReentrant {

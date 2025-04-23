@@ -5,6 +5,8 @@ import {
   import { anyValue } from "@nomicfoundation/hardhat-chai-matchers/withArgs";
   import { expect } from "chai";
   import hre from "hardhat";
+  import { ethers } from "hardhat";
+  import { EscrowAgent } from "../typechain-types";
 
 
   describe("EscrowAgent", function () {
@@ -22,6 +24,8 @@ import {
       const value = hre.ethers.parseEther("0.1");
       await escrow.connect(depositor)["createAgreement(address,string)"](beneficiary, cid, {value: value});
       const agreementId = 1;
+      const poolArbitrator = (await hre.ethers.getSigners())[4];
+      await escrow.connect(owner).addPoolArbitrator(poolArbitrator);
       return { escrow, owner, depositor, beneficiary, someone, agreementId, value };
     }
 
@@ -229,7 +233,7 @@ import {
         async function agreeOnArbitratorFixture() {
             const { escrow, owner, depositor, beneficiary, someone, agreementId } = await loadFixture(disputedAgreementFixture);
             const feePercentage = 0.1 * 1000000;
-            const arbitrator = (await hre.ethers.getSigners())[4];
+            const arbitrator = (await hre.ethers.getSigners())[5];
             await escrow.connect(depositor).registerArbitrator(agreementId, arbitrator, feePercentage);
             await escrow.connect(beneficiary).registerArbitrator(agreementId, arbitrator, feePercentage);
             return { escrow, owner, depositor, beneficiary, someone, agreementId, arbitrator, feePercentage };
@@ -318,8 +322,9 @@ import {
             const resolveDisputePeriod = Number(await escrow.RESOLVE_DISPUTE_MAX_PERIOD());
             await time.increase(agreeOnArbitratorPeriod + resolveDisputePeriod);
             // check assigned event
+            const poolArbitrator = (await hre.ethers.getSigners())[4];
             await expect(await escrow.connect(depositor).assignArbitrator(agreementId)).to.emit(escrow, "PoolArbitratorAssigned")
-              .withArgs(agreementId, owner);
+              .withArgs(agreementId, poolArbitrator);
         });
 
         it("Should NOT assign arbitrator from the pool before 2 days after an arbitrator registered", async () => {
