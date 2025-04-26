@@ -29,6 +29,14 @@ import {
       return { escrow, owner, depositor, beneficiary, someone, agreementId, value };
     }
 
+    async function disputedAgreementFixture() {
+        const { escrow, owner, depositor, beneficiary, someone, agreementId } = await loadFixture(activeAgreementFixture);
+        const defaultDeadline = Number(await escrow.DEFAULT_DEADLINE_DATE());
+        await time.increase(defaultDeadline);
+        await escrow.connect(depositor).raiseDispute(agreementId);
+        return { escrow, owner, depositor, beneficiary, someone, agreementId };
+    }
+
     async function activeAgreementFixture() {
       const { escrow, owner, depositor, beneficiary, someone, agreementId, value } = await loadFixture(createAgreementFixture);
       await escrow.connect(beneficiary).approveAgreement(agreementId);
@@ -221,14 +229,6 @@ import {
     });
 
     describe("Dispute agreement", () => {
-
-        async function disputedAgreementFixture() {
-            const { escrow, owner, depositor, beneficiary, someone, agreementId } = await loadFixture(activeAgreementFixture);
-            const defaultDeadline = Number(await escrow.DEFAULT_DEADLINE_DATE());
-            await time.increase(defaultDeadline);
-            await escrow.connect(depositor).raiseDispute(agreementId);
-            return { escrow, owner, depositor, beneficiary, someone, agreementId };
-        }
       
         async function agreeOnArbitratorFixture() {
             const { escrow, owner, depositor, beneficiary, someone, agreementId } = await loadFixture(disputedAgreementFixture);
@@ -407,6 +407,72 @@ import {
             await expect(escrow.connect(depositor)["resolveDispute(uint256)"](agreementId)).to.revertedWith(
               "You can resolve dispute yourself in 2 days after the pool arbitrator assignment date"
             );
+        });
+    });
+
+    describe("Add/remove pool arbitrator", () => {
+        it("Owner should add pool arbitrator", async () => {
+            const { escrow, owner, depositor, beneficiary, someone } = await loadFixture(deployEscrowFixture);
+            const poolArbitrator = (await hre.ethers.getSigners())[4];
+            await expect(await escrow.connect(owner).addPoolArbitrator(poolArbitrator)).to.emit(escrow, "PoolArbitratorAdded")
+              .withArgs(poolArbitrator);
+        });
+
+        it("Beneficiary/depositor/others should NOT add pool arbitrator", async () => {
+            const { escrow, owner, depositor, beneficiary, someone } = await loadFixture(createAgreementFixture);
+            const poolArbitrator = (await hre.ethers.getSigners())[4];
+            // denied for depositor
+            await expect(escrow.connect(depositor).addPoolArbitrator(poolArbitrator)).to.revertedWith("You are not the owner.");
+            // denied for beneficiary
+            await expect(escrow.connect(beneficiary).addPoolArbitrator(poolArbitrator)).to.revertedWith("You are not the owner.");
+            // denied for someone
+            await expect(escrow.connect(someone).addPoolArbitrator(poolArbitrator)).to.revertedWith("You are not the owner.");
+        });
+
+        it("Owner should NOT add the same pool arbitrator twice", async () => {
+            const { escrow, owner, depositor, beneficiary, someone } = await loadFixture(deployEscrowFixture);
+            const poolArbitrator = (await hre.ethers.getSigners())[4];
+            await expect(await escrow.connect(owner).addPoolArbitrator(poolArbitrator)).to.emit(escrow, "PoolArbitratorAdded")
+              .withArgs(poolArbitrator);
+            await expect(escrow.connect(owner).addPoolArbitrator(poolArbitrator)).to.revertedWithCustomError(escrow, "ArbitratorInPool");
+        });
+
+        it("Owner should remove pool arbitrator", async () => {
+            const { escrow, owner, depositor, beneficiary, someone } = await loadFixture(createAgreementFixture);
+            const poolArbitrator = (await hre.ethers.getSigners())[4];
+            await expect(await escrow.connect(owner).removePoolArbitrator(poolArbitrator)).to.emit(escrow, "PoolArbitratorRemoved")
+              .withArgs(poolArbitrator);
+        });
+
+        it("Beneficiary/depositor/others should NOT remove pool arbitrator", async () => {
+            const { escrow, owner, depositor, beneficiary, someone } = await loadFixture(createAgreementFixture);
+            const poolArbitrator = (await hre.ethers.getSigners())[4];
+            // denied for depositor
+            await expect(escrow.connect(depositor).removePoolArbitrator(poolArbitrator)).to.revertedWith("You are not the owner.");
+            // denied for beneficiary
+            await expect(escrow.connect(beneficiary).removePoolArbitrator(poolArbitrator)).to.revertedWith("You are not the owner.");
+            // denied for someone
+            await expect(escrow.connect(someone).removePoolArbitrator(poolArbitrator)).to.revertedWith("You are not the owner.");
+        });
+
+        it("Owner should NOT remove pool the arbitrator twice", async () => {
+            const { escrow, owner, depositor, beneficiary, someone } = await loadFixture(createAgreementFixture);
+            const poolArbitrator = (await hre.ethers.getSigners())[4];
+            await expect(await escrow.connect(owner).removePoolArbitrator(poolArbitrator)).to.emit(escrow, "PoolArbitratorRemoved")
+              .withArgs(poolArbitrator);
+            await expect(escrow.connect(owner).removePoolArbitrator(poolArbitrator)).to.revertedWithCustomError(escrow, "ArbitratorNotInPool");
+        });
+
+        it("Owner should NOT remove the assigned arbitrator from the pool", async () => {
+            const { escrow, owner, depositor, beneficiary, someone, agreementId } = await loadFixture(disputedAgreementFixture);
+            const agreeOnArbitratorPeriod = Number(await escrow.AGREE_ON_ARBITRATOR_MAX_PERIOD());
+            await time.increase(agreeOnArbitratorPeriod);
+            // check assigned event
+            const poolArbitrator = (await hre.ethers.getSigners())[4];
+            await expect(await escrow.connect(depositor).assignArbitrator(agreementId)).to.emit(escrow, "PoolArbitratorAssigned")
+              .withArgs(agreementId, poolArbitrator);
+            // check revert prohibiting removing arbitrator from the pool
+            await expect(escrow.connect(owner).removePoolArbitrator(poolArbitrator)).to.revertedWith("Arbitrator has active agreements");
         });
     });
 
