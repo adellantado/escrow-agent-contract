@@ -11,6 +11,8 @@ import {
 
   describe("EscrowAgent", function () {
 
+    const EMPTY_ADDRESS = "0x0000000000000000000000000000000000000000";
+
     async function deployEscrowFixture() {
       const [owner, depositor, beneficiary, someone] = await hre.ethers.getSigners();  
       const EscrowAgent = await hre.ethers.getContractFactory("EscrowAgent");
@@ -71,6 +73,13 @@ import {
             expect(details[2].toString()).to.be.equal(start.toString());
             expect(details[3].toString()).to.be.equal(end.toString());
             // check funds moved
+        });
+
+        it("Should NOT create a new agreement with empty address", async () => {
+          const { escrow, owner, depositor, beneficiary } = await loadFixture(deployEscrowFixture);
+          const cid = "0xB45165ED3CD437B9FFAD02A2AAD22A4DDC69162470E2622982889CE5826F6E3D";
+          const value = hre.ethers.parseEther("0.1");
+          await expect(escrow.connect(depositor)["createAgreement(address,string)"](EMPTY_ADDRESS, cid, {value: value})).to.revertedWith("Address is zero");
         });
 
         it("Depositor should add funds to an existing agreement", async () => {
@@ -258,6 +267,14 @@ import {
             );
         });
 
+        it("Depositor and beneficiary should NOT register an arbitrator with empty address", async () => {
+          const { escrow, owner, depositor, beneficiary, someone, agreementId} = await loadFixture(disputedAgreementFixture);
+          const feePercentage = 0.1 * 1000000;
+          const arbitrator = EMPTY_ADDRESS
+          await expect(escrow.connect(depositor).registerArbitrator(agreementId, arbitrator, feePercentage)).to.revertedWith("Address is zero");
+          await expect(escrow.connect(beneficiary).registerArbitrator(agreementId, arbitrator, feePercentage)).to.revertedWith("Address is zero");
+      });
+
         it("Depositor and beneficiary should agree on arbitrator", async () => {
             const { escrow, owner, depositor, beneficiary, someone, agreementId} = await loadFixture(disputedAgreementFixture);
             const feePercentage = 0.1 * 1000000;
@@ -418,6 +435,11 @@ import {
               .withArgs(poolArbitrator);
         });
 
+        it("Owner should NOT add pool arbitrator with empty address", async () => {
+            const { escrow, owner, depositor, beneficiary, someone } = await loadFixture(deployEscrowFixture);
+            await expect(escrow.connect(owner).addPoolArbitrator(EMPTY_ADDRESS)).to.revertedWith("Address is zero");
+        });
+
         it("Beneficiary/depositor/others should NOT add pool arbitrator", async () => {
             const { escrow, owner, depositor, beneficiary, someone } = await loadFixture(createAgreementFixture);
             const poolArbitrator = (await hre.ethers.getSigners())[4];
@@ -442,6 +464,11 @@ import {
             const poolArbitrator = (await hre.ethers.getSigners())[4];
             await expect(await escrow.connect(owner).removePoolArbitrator(poolArbitrator)).to.emit(escrow, "PoolArbitratorRemoved")
               .withArgs(poolArbitrator);
+        });
+
+        it("Owner should NOT remove pool arbitrator with empty address", async () => {
+            const { escrow, owner, depositor, beneficiary, someone } = await loadFixture(deployEscrowFixture);
+            await expect(escrow.connect(owner).removePoolArbitrator(EMPTY_ADDRESS)).to.revertedWith("Address is zero");
         });
 
         it("Beneficiary/depositor/others should NOT remove pool arbitrator", async () => {
