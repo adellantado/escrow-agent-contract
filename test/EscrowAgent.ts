@@ -364,7 +364,7 @@ import {
             // check funds get distributed fully
             expect(fee + refund + released).to.be.equal(value);
             // check resolved event
-            await expect(await escrow.connect(arbitrator)["resolveDispute(uint256,uint256)"](agreementId, refundPercentage)).to.emit(escrow, "DisputeResolved")
+            await expect(await escrow.connect(arbitrator)["resolveDispute(uint256,uint32)"](agreementId, refundPercentage)).to.emit(escrow, "DisputeResolved")
               .withArgs(agreementId, refundPercentage, fee, refund, released);
             // check status 
             expect(await escrow.getAgreementStatus(agreementId)).to.be.equal(7);
@@ -374,11 +374,11 @@ import {
             const { escrow, owner, depositor, beneficiary, someone, agreementId, arbitrator, feePercentage } = await loadFixture(agreeOnArbitratorFixture);
             const refundPercentage = 0.1 * 1000000;
             // check revert prohibiting resolving dispute for depositor with refund percentage
-            await expect(escrow.connect(depositor)["resolveDispute(uint256,uint256)"](agreementId, refundPercentage)).to.revertedWith(
+            await expect(escrow.connect(depositor)["resolveDispute(uint256,uint32)"](agreementId, refundPercentage)).to.revertedWith(
               "You are not the arbitrator."
             );
             // check revert prohibiting resolving dispute for beneficiary with refund percentage
-            await expect(escrow.connect(beneficiary)["resolveDispute(uint256,uint256)"](agreementId, refundPercentage)).to.revertedWith(
+            await expect(escrow.connect(beneficiary)["resolveDispute(uint256,uint32)"](agreementId, refundPercentage)).to.revertedWith(
               "You are not the arbitrator."
             );
             // check revert prohibiting resolving dispute for depositor by splitting funds
@@ -514,7 +514,7 @@ import {
             // withdraw funds
             const resp = await escrow.connect(depositor).withdrawFunds(agreementId);
             // check event
-            await expect(resp).to.emit(escrow, "FundsWithdrawed")
+            await expect(resp).to.emit(escrow, "FundsWithdrawn")
                 .withArgs(agreementId, depositor, value);
             // check funds moved
             await expect(resp).to.changeEtherBalances(
@@ -536,7 +536,7 @@ import {
             // withdraw funds
             const resp = await escrow.connect(depositor).withdrawFunds(agreementId);
             // check event
-            await expect(resp).to.emit(escrow, "FundsWithdrawed")
+            await expect(resp).to.emit(escrow, "FundsWithdrawn")
                 .withArgs(agreementId, depositor, value);
             // check funds moved
             await expect(resp).to.changeEtherBalances(
@@ -558,7 +558,7 @@ import {
             // withdraw funds
             const resp = await escrow.connect(depositor).withdrawFunds(agreementId);
             // check event
-            await expect(resp).to.emit(escrow, "FundsWithdrawed")
+            await expect(resp).to.emit(escrow, "FundsWithdrawn")
                 .withArgs(agreementId, depositor, value);
             // check funds moved
             await expect(resp).to.changeEtherBalances(
