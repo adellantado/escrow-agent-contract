@@ -109,26 +109,4 @@ interface IEscrowAgent {
     error NoBalance(address sender, Status status);
     // can't withdraw funds
     error WithdrawProhibited(address sender, Status status);
-    // arbitrator is in the pool
-    error ArbitratorInPool(address arbitrator);
-    // arbitrator is not in the pool
-    error ArbitratorNotInPool(address arbitrator);
-
-    event AgreementCreated(address indexed depositor, address indexed beneficiary, 
-        uint256 indexed agreementId, uint96 amount, uint32 deadlineDate, string detailsHash);
-    event AgreementCanceled(uint256 indexed agreementId);
-    event AgreementApproved(uint256 indexed agreementId);
-    event AgreementRejected(uint256 indexed agreementId);
-    event AgreementRefunded(uint256 indexed agreementId);
-    event FundsAdded(uint256 indexed agreementId, address indexed sender, uint96 amount, uint96 totalAmount);
-    event FundsWithdrawn(uint256 indexed agreementId, address indexed recipient, uint96 amount);
-    event FundsReleased(uint256 indexed agreementId);
-    event DisputeRaised(uint256 indexed agreementId);
-    event DisputeResolved(uint256 indexed agreementId, uint32 refundPercentage, 
-        uint96 feeAmount, uint96 refundAmount, uint96 releasedAmount);
-    event DisputeUnresolved(uint256 indexed agreementId, uint32 refundPercentage, uint96 refundAmount);
-    event ArbitratorAgreed(uint256 indexed agreementId, address indexed arbitrator, bool agreed);
-    event PoolArbitratorAssigned(uint256 indexed agreementId, address indexed arbitrator);
-    event PoolArbitratorAdded(address indexed arbitrator);
-    event PoolArbitratorRemoved(address indexed arbitrator);
 }

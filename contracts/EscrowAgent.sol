@@ -2,9 +2,7 @@
 
 pragma solidity ^0.8.26;
 
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-
-import "./interfaces/IEscrowAgent.sol";
+import "./BaseEscrowAgent.sol";
 
 // This contract is a "Escrow Agent" contract with the following features:
 // * Deposit funds in escrow
@@ -20,14 +18,9 @@ import "./interfaces/IEscrowAgent.sol";
 // - optimize gas
 // - randomly select arbitrator from the pool
 // 
-contract EscrowAgent is IEscrowAgent, ReentrancyGuard {
+contract EscrowAgent is BaseEscrowAgent {
 
     uint256 public constant DEFAULT_DEADLINE_DATE = 30 days;
-    uint256 public constant RELEASE_FUNDS_AFTER_DEADLINE = 3 days;
-    uint256 public constant AGREE_ON_ARBITRATOR_MAX_PERIOD = 2 days;
-    uint256 public constant RESOLVE_DISPUTE_MAX_PERIOD = 2 days;
-    uint256 public constant UNRESOLVED_DISPUTE_REFUND_PERCENTAGE = 500000;
-    uint256 public constant DEFAULT_ARBITRATOR_PERCENTAGE = 10000;
 
     address internal immutable _owner;
     mapping(uint256 => Agreement) internal _escrow;
@@ -35,6 +28,29 @@ contract EscrowAgent is IEscrowAgent, ReentrancyGuard {
     address[] internal _arbitratorsPool;
     mapping(address => uint256[]) internal _assignedAgreements;
     uint256 private _agreementCounter;
+
+    // arbitrator is in the pool
+    error ArbitratorInPool(address arbitrator);
+    // arbitrator is not in the pool
+    error ArbitratorNotInPool(address arbitrator);
+
+    event AgreementCreated(address indexed depositor, address indexed beneficiary, 
+        uint256 indexed agreementId, uint96 amount, uint32 deadlineDate, string detailsHash);
+    event AgreementCanceled(uint256 indexed agreementId);
+    event AgreementApproved(uint256 indexed agreementId);
+    event AgreementRejected(uint256 indexed agreementId);
+    event AgreementRefunded(uint256 indexed agreementId);
+    event FundsAdded(uint256 indexed agreementId, address indexed sender, uint96 amount, uint96 totalAmount);
+    event FundsWithdrawn(uint256 indexed agreementId, address indexed recipient, uint96 amount);
+    event FundsReleased(uint256 indexed agreementId);
+    event DisputeRaised(uint256 indexed agreementId);
+    event DisputeResolved(uint256 indexed agreementId, uint32 refundPercentage, 
+        uint96 feeAmount, uint96 refundAmount, uint96 releasedAmount);
+    event DisputeUnresolved(uint256 indexed agreementId, uint32 refundPercentage, uint96 refundAmount);
+    event ArbitratorAgreed(uint256 indexed agreementId, address indexed arbitrator, bool agreed);
+    event PoolArbitratorAssigned(uint256 indexed agreementId, address indexed arbitrator);
+    event PoolArbitratorAdded(address indexed arbitrator);
+    event PoolArbitratorRemoved(address indexed arbitrator);
 
     modifier onlyDepositor(uint256 agreementId) {
         require(msg.sender == address(_escrow[agreementId].depositor), "You are not the depositor.");
@@ -65,11 +81,6 @@ contract EscrowAgent is IEscrowAgent, ReentrancyGuard {
 
     modifier inStatus(Status status, uint256 agreementId) {
         require(_escrow[agreementId].status == status, "The agreement is in a wrong status.");
-        _;
-    }
-
-    modifier checkAddress(address user) {
-        require(user != address(0), "Address is zero");
         _;
     }
 
