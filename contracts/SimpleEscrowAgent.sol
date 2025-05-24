@@ -6,7 +6,6 @@ import "./BaseEscrowAgent.sol";
 
 // TODO:
 // - send predefined set of arbitrators
-// - randomly select arbitrator from the pool
 // - add upgradability
 contract SimpleEscrowAgent is BaseEscrowAgent {
 
@@ -160,10 +159,11 @@ contract SimpleEscrowAgent is BaseEscrowAgent {
             require(block.timestamp >= _dispute.startDate + AGREE_ON_ARBITRATOR_MAX_PERIOD, 
                 "Too early to assign arbitrator from the pool");
         }
-        _dispute.arbitrator = payable(_arbitratorsPool[0]);
+        uint randomIndex = uint256(keccak256(abi.encodePacked(block.timestamp, block.prevrandao, msg.sender))) % _arbitratorsPool.length;
+        _dispute.arbitrator = payable(_arbitratorsPool[randomIndex]);
         _dispute.agreed = true;
         _dispute.assignedDate = uint32(block.timestamp);
-        emit PoolArbitratorAssigned(_arbitratorsPool[0]);
+        emit PoolArbitratorAssigned(_arbitratorsPool[randomIndex]);
     }
 
     function resolveDispute() public onlyDepositorOrBeneficiary inStatus(Status.Disputed) {

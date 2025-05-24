@@ -16,7 +16,6 @@ import "./BaseEscrowAgent.sol";
 // - erc20 support
 // - min deposited funds
 // - optimize gas
-// - randomly select arbitrator from the pool
 // 
 contract EscrowAgent is BaseEscrowAgent {
 
@@ -201,11 +200,12 @@ contract EscrowAgent is BaseEscrowAgent {
             // if arbitrator is not agreed we need to trigger assigment from the pool
             require(block.timestamp >= _disputes[agreementId].startDate + AGREE_ON_ARBITRATOR_MAX_PERIOD, "Too early to assign artibrator from the pool");
         }
-        _disputes[agreementId].arbitrator = payable(_arbitratorsPool[0]);
+        uint randomIndex = uint256(keccak256(abi.encodePacked(block.timestamp, block.prevrandao, msg.sender))) % _arbitratorsPool.length;
+        _disputes[agreementId].arbitrator = payable(_arbitratorsPool[randomIndex]);
         _disputes[agreementId].agreed = true;
         _disputes[agreementId].assignedDate = uint32(block.timestamp);
-        _assignedAgreements[_arbitratorsPool[0]].push(agreementId);
-        emit PoolArbitratorAssigned(agreementId, _arbitratorsPool[0]);
+        _assignedAgreements[_arbitratorsPool[randomIndex]].push(agreementId);
+        emit PoolArbitratorAssigned(agreementId, _arbitratorsPool[randomIndex]);
     }
 
     function resolveDispute(uint256 agreementId) public
