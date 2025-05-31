@@ -9,7 +9,7 @@
           </div>
           <div class="connection-status">
             <div class="status-indicator" :class="{ connected: isConnected }">
-              <span class="status-dot">●</span>
+              <span class="status-dot" :class="{ connected: isConnected }">●</span>
               <span class="status-text">{{ isConnected ? 'Connected' : 'Disconnected' }}</span>
             </div>
             <div v-if="currentAccount" class="account-info">
@@ -23,6 +23,14 @@
               :disabled="loading"
             >
               Connect Wallet
+            </button>
+            <button 
+              v-if="isConnected" 
+              @click="disconnectWallet" 
+              class="btn btn-disconnect"
+              :disabled="loading"
+            >
+              Disconnect
             </button>
           </div>
         </div>
@@ -472,6 +480,24 @@ export default {
         const timezoneOffset = date.getTimezoneOffset() * 60000;
         const adjustedDate = new Date(date.getTime() + timezoneOffset);
         this.deadlineTimestamp = Math.floor(adjustedDate.getTime() / 1000);
+      }
+    },
+
+    async disconnectWallet() {
+      try {
+        this.loading = true;
+        this.isConnected = false;
+        this.currentAccount = null;
+        this.web3 = null;
+        this.factoryContract = null;
+        this.escrowContract = null;
+        this.selectedFile = null;
+        this.ipfsHash = null;
+        this.contractDetails = null;
+      } catch (error) {
+        this.error = "Failed to disconnect wallet: " + error.message;
+      } finally {
+        this.loading = false;
       }
     }
   },

@@ -148,6 +148,15 @@
   background-color: #357abd;
 }
 
+.btn-disconnect {
+  background-color: #dc3545;
+  color: white;
+}
+
+.btn-disconnect:hover:not(:disabled) {
+  background-color: #c82333;
+}
+
 .btn-primary {
   background-color: #28a745;
   color: white;
