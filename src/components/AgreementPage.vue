@@ -8,13 +8,13 @@
             <p class="subtitle">Secure and transparent multisig escrow service</p>
           </div>
           <div class="connection-status">
-            <div class="status-indicator" :class="{ connected: isConnected }">
-              <span class="status-dot" :class="{ connected: isConnected }">●</span>
-              <span class="status-text">{{ isConnected ? 'Connected' : 'Disconnected' }}</span>
-            </div>
             <div v-if="currentAccount" class="account-info">
               <span class="account-label">Account:</span>
               <span class="account-address">{{ formatAddress(currentAccount) }}</span>
+            </div>
+            <div class="status-indicator" :class="{ connected: isConnected }">
+              <span class="status-dot" :class="{ connected: isConnected }">●</span>
+              <span class="status-text">{{ isConnected ? 'Connected' : 'Disconnected' }}</span>
             </div>
             <button 
               v-if="!isConnected" 
