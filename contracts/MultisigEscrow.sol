@@ -3,8 +3,9 @@
 pragma solidity ^0.8.26;
 
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 
-contract MultisigEscrow is ReentrancyGuard {
+contract MultisigEscrow is ReentrancyGuard, Pausable {
 
     struct Agreement {
 
@@ -43,7 +44,7 @@ contract MultisigEscrow is ReentrancyGuard {
         // ||
         // \/
         // Depositor changed his mind, if beneficiary haven't agreed yet
-        Canceled,
+        Revoked,
         // 
         // Funded 
         // ||
@@ -80,7 +81,7 @@ contract MultisigEscrow is ReentrancyGuard {
 
     event AgreementCreated(address indexed depositor, address indexed beneficiary, 
         uint96 amount, uint32 deadlineDate);
-    event AgreementCanceled();
+    event AgreementRevoked();
     event AgreementApproved();
     event AgreementRejected();
     event AgreementRefunded();
@@ -98,18 +99,18 @@ contract MultisigEscrow is ReentrancyGuard {
     }
 
     modifier onlyDepositor() {
-        require(msg.sender == address(_agreement.depositor), "only depositor");
+        require(_msgSender() == address(_agreement.depositor), "only depositor");
         _;
     }
 
     modifier onlyBeneficiary() {
-        require(msg.sender == address(_agreement.beneficiary), "only beneficiary");
+        require(_msgSender() == address(_agreement.beneficiary), "only beneficiary");
         _;
     }
 
     modifier onlyDepositorOrBeneficiary() {
-        require(msg.sender == address(_agreement.depositor) || 
-            msg.sender == address(_agreement.beneficiary), "only depositor/beneficiary.");
+        require(_msgSender() == address(_agreement.depositor) || 
+            _msgSender() == address(_agreement.beneficiary), "only depositor/beneficiary.");
         _;
     }
 
@@ -119,7 +120,7 @@ contract MultisigEscrow is ReentrancyGuard {
     }
 
     modifier onlyMultisig() {
-        require(msg.sender == _agreement.multisig, "only multisig");
+        require(_msgSender() == _agreement.multisig, "only multisig");
         _;
     }
 
@@ -128,7 +129,7 @@ contract MultisigEscrow is ReentrancyGuard {
         uint32 deadlineDate
     ) payable checkAddress(beneficiary) {
         _agreement = Agreement({
-            depositor: payable(msg.sender),
+            depositor: payable(_msgSender()),
             beneficiary: beneficiary,
             amount: uint96(msg.value),
             deadlineDate: deadlineDate,
@@ -137,7 +138,7 @@ contract MultisigEscrow is ReentrancyGuard {
             multisig: address(0),
             approved: false
         });
-        emit AgreementCreated(msg.sender, beneficiary, uint96(msg.value), deadlineDate);
+        emit AgreementCreated(_msgSender(), beneficiary, uint96(msg.value), deadlineDate);
     }
 
     receive() external payable onlyDepositor inStatus(Status.Funded) {
@@ -145,28 +146,28 @@ contract MultisigEscrow is ReentrancyGuard {
         emit FundsAdded(uint96(msg.value), _agreement.amount);
     }
 
-    function cancelAgreement() public onlyDepositor inStatus(Status.Funded) {
-        _agreement.status = Status.Canceled;
-        emit AgreementCanceled();
+    function revokeAgreement() external onlyDepositor inStatus(Status.Funded) {
+        _agreement.status = Status.Revoked;
+        emit AgreementRevoked();
     }
 
-    function approveAgreement() public onlyBeneficiary inStatus(Status.Funded) {
+    function approveAgreement() external onlyBeneficiary inStatus(Status.Funded) {
         _agreement.status = Status.Active;
         emit AgreementApproved();
     }
 
-    function rejectAgreement() public onlyBeneficiary inStatus(Status.Funded) {
+    function rejectAgreement() external onlyBeneficiary inStatus(Status.Funded) {
         _agreement.status = Status.Rejected;
         emit AgreementRejected();
     }
 
-    function refundAgreement() public onlyBeneficiary inStatus(Status.Active) {
+    function refundAgreement() external onlyBeneficiary inStatus(Status.Active) {
         _agreement.status = Status.Refunded;
         emit AgreementRefunded();
     }
 
-    function releaseFunds() public onlyDepositorOrBeneficiary inStatus(Status.Active) {
-        if (msg.sender == _agreement.beneficiary) {
+    function releaseFunds() external onlyDepositorOrBeneficiary inStatus(Status.Active) {
+        if (_msgSender() == _agreement.beneficiary) {
             require(block.timestamp >= _agreement.deadlineDate + RELEASE_FUNDS_AFTER_DEADLINE, 
                 "can be released after: deadline + 3 days");
         }
@@ -174,23 +175,25 @@ contract MultisigEscrow is ReentrancyGuard {
         emit FundsReleased();
     }
 
-    function withdrawFunds() public payable onlyBeneficiary inStatus(Status.Closed) nonReentrant {
+    function withdrawFunds() external payable onlyBeneficiary inStatus(Status.Closed) nonReentrant {
         require(_agreement.amount > 0, "funds not available");
         _agreement.amount = 0;
         _agreement.beneficiary.transfer(_agreement.amount);
-        emit FundsWithdrawn(msg.sender, _agreement.amount);
+        emit FundsWithdrawn(_msgSender(), _agreement.amount);
+        _pause();
     }
 
-    function removeFunds() external onlyDepositor nonReentrant {
-        require(_agreement.status == Status.Canceled || _agreement.status == Status.Rejected || 
+    function removeFunds() external payable onlyDepositor nonReentrant {
+        require(_agreement.status == Status.Revoked || _agreement.status == Status.Rejected || 
             _agreement.status == Status.Refunded, "wrong status");
         require(_agreement.amount > 0, "funds not available");
         _agreement.amount = 0;
         _agreement.depositor.transfer(_agreement.amount);
-        emit FundsWithdrawn(msg.sender, _agreement.amount);
+        emit FundsWithdrawn(_msgSender(), _agreement.amount);
+        _pause();
     }
 
-    function lockFunds() public onlyDepositor inStatus(Status.Active) {
+    function lockFunds() external onlyDepositor inStatus(Status.Active) {
         require(block.timestamp >= _agreement.deadlineDate &&
             block.timestamp < _agreement.deadlineDate + RELEASE_FUNDS_AFTER_DEADLINE, 
             "can be locked after deadline during 3 days");
@@ -211,13 +214,16 @@ contract MultisigEscrow is ReentrancyGuard {
         emit MultisigApproved(_agreement.multisig);
     }
 
-    function compensateAgreement(uint96 amount) external 
+    function compensateAgreement(uint96 amount) external payable 
             onlyMultisig inStatus(Status.Locked) nonReentrant {
         require(_agreement.amount >= amount, "not enough funds");
         _agreement.amount -= amount;
         _agreement.status = Status.Closed;
         _agreement.depositor.transfer(amount);
         emit FundsCompensated(amount);
+        if (_agreement.amount == 0) {
+            _pause();
+        }
     }
     
     function getAgreementDetails() external view 
@@ -230,12 +236,27 @@ contract MultisigEscrow is ReentrancyGuard {
         return _agreement.status;
     }
 
-    function destroy() external {
-        require(_agreement.status == Status.Closed || 
-                _agreement.status == Status.Canceled || 
-                _agreement.status == Status.Rejected || 
-                _agreement.status == Status.Refunded,
-            "Agreement must be in final state");
-        selfdestruct(payable(_agreement.depositor));
+    function pause() onlyDepositor whenNotPaused external {
+        require(_agreement.status == Status.Revoked ||
+                _agreement.status == Status.Rejected ||
+                _agreement.status == Status.Refunded ||
+                _agreement.status == Status.Closed,
+            "must be in final state");
+        require (_agreement.amount == 0, "withdraw funds to pause");
+        _pause();
+    }
+
+    function createAgreement(
+        address payable beneficiary,
+        uint32 deadlineDate
+    ) external payable onlyDepositor whenPaused checkAddress(beneficiary) {
+        _agreement.beneficiary = beneficiary;
+        _agreement.amount = uint96(msg.value);
+        _agreement.deadlineDate = deadlineDate;
+        _agreement.startDate = uint32(block.timestamp);
+        _agreement.status = Status.Funded;
+        _agreement.multisig = address(0);
+        _agreement.approved = false;
+        emit AgreementCreated(_msgSender(), beneficiary, uint96(msg.value), deadlineDate);
     }
 } 
