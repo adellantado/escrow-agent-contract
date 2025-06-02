@@ -9,11 +9,9 @@ contract MultisigEscrow is ReentrancyGuard, Pausable {
 
     struct Agreement {
 
-        // 1st slot (32 bytes)
+        // 1st slot (20 bytes)
         // aka "buyer"
         address payable depositor;
-        // eth amount 
-        uint96 amount;
 
         // 2nd slot (29 bytes)
         // aka "seller"
@@ -85,13 +83,13 @@ contract MultisigEscrow is ReentrancyGuard, Pausable {
     event AgreementApproved();
     event AgreementRejected();
     event AgreementRefunded();
-    event FundsAdded(uint96 amount, uint96 totalAmount);
-    event FundsWithdrawn(address indexed recipient, uint96 amount);
+    event FundsAdded(uint96 amount, uint256 totalAmount);
+    event FundsWithdrawn(address indexed recipient, uint256 amount);
     event FundsReleased();
     event FundsLocked();
     event MultisigSet(address indexed multisig);
     event MultisigApproved(address indexed multisig);
-    event FundsCompensated(uint96 amount);
+    event FundsCompensated(uint256 amount);
 
     modifier checkAddress(address user) {
         require(user != address(0), "zero address");
@@ -131,7 +129,6 @@ contract MultisigEscrow is ReentrancyGuard, Pausable {
         _agreement = Agreement({
             depositor: payable(_msgSender()),
             beneficiary: beneficiary,
-            amount: uint96(msg.value),
             deadlineDate: deadlineDate,
             startDate: uint32(block.timestamp),
             status: Status.Funded,
@@ -142,8 +139,7 @@ contract MultisigEscrow is ReentrancyGuard, Pausable {
     }
 
     receive() external payable onlyDepositor inStatus(Status.Funded) {
-        _agreement.amount += uint96(msg.value);
-        emit FundsAdded(uint96(msg.value), _agreement.amount);
+        emit FundsAdded(uint96(msg.value), address(this).balance);
     }
 
     function revokeAgreement() external onlyDepositor inStatus(Status.Funded) {
@@ -176,20 +172,20 @@ contract MultisigEscrow is ReentrancyGuard, Pausable {
     }
 
     function withdrawFunds() external payable onlyBeneficiary inStatus(Status.Closed) nonReentrant {
-        require(_agreement.amount > 0, "funds not available");
-        _agreement.amount = 0;
-        _agreement.beneficiary.transfer(_agreement.amount);
-        emit FundsWithdrawn(_msgSender(), _agreement.amount);
+        require(address(this).balance > 0, "funds not available");
+        (bool success, ) =  _agreement.beneficiary.call{value: address(this).balance}("");
+        require(success, "transfer failed");
+        emit FundsWithdrawn(_msgSender(), address(this).balance);
         _pause();
     }
 
     function removeFunds() external payable onlyDepositor nonReentrant {
         require(_agreement.status == Status.Revoked || _agreement.status == Status.Rejected || 
             _agreement.status == Status.Refunded, "wrong status");
-        require(_agreement.amount > 0, "funds not available");
-        _agreement.amount = 0;
-        _agreement.depositor.transfer(_agreement.amount);
-        emit FundsWithdrawn(_msgSender(), _agreement.amount);
+        require(address(this).balance > 0, "funds not available");
+        (bool success, ) =  _agreement.depositor.call{value: address(this).balance}("");
+        require(success, "transfer failed");
+        emit FundsWithdrawn(_msgSender(), address(this).balance);
         _pause();
     }
 
@@ -214,21 +210,23 @@ contract MultisigEscrow is ReentrancyGuard, Pausable {
         emit MultisigApproved(_agreement.multisig);
     }
 
-    function compensateAgreement(uint96 amount) external payable 
+    function compensateAgreement(uint256 amount) external payable 
             onlyMultisig inStatus(Status.Locked) nonReentrant {
-        require(_agreement.amount >= amount, "not enough funds");
-        _agreement.amount -= amount;
+        require(address(this).balance >= amount, "not enough funds");
         _agreement.status = Status.Closed;
-        _agreement.depositor.transfer(amount);
+        if (amount != 0) {
+            (bool success, ) =  _agreement.depositor.call{value: amount}("");
+            require(success, "transfer failed");
+        }
         emit FundsCompensated(amount);
-        if (_agreement.amount == 0) {
+        if (address(this).balance == 0) {
             _pause();
         }
     }
     
     function getAgreementDetails() external view 
             onlyDepositorOrBeneficiary returns (uint256, uint256, uint256, Status, address, bool) {
-        return (_agreement.amount, _agreement.startDate, _agreement.deadlineDate, 
+        return (address(this).balance, _agreement.startDate, _agreement.deadlineDate, 
             _agreement.status, _agreement.multisig, _agreement.approved);
     }
 
@@ -242,7 +240,7 @@ contract MultisigEscrow is ReentrancyGuard, Pausable {
                 _agreement.status == Status.Refunded ||
                 _agreement.status == Status.Closed,
             "must be in final state");
-        require (_agreement.amount == 0, "withdraw funds to pause");
+        require (address(this).balance == 0, "withdraw funds to pause");
         _pause();
     }
 
@@ -251,7 +249,6 @@ contract MultisigEscrow is ReentrancyGuard, Pausable {
         uint32 deadlineDate
     ) external payable onlyDepositor whenPaused checkAddress(beneficiary) {
         _agreement.beneficiary = beneficiary;
-        _agreement.amount = uint96(msg.value);
         _agreement.deadlineDate = deadlineDate;
         _agreement.startDate = uint32(block.timestamp);
         _agreement.status = Status.Funded;
