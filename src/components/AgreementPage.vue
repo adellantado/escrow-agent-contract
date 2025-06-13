@@ -287,11 +287,15 @@ export default {
     async deployContract() {
       try {
         this.loading = true;
+        // Convert deadline to Unix timestamp (seconds)
         const deadlineTimestamp = Math.floor(new Date(this.deadlineDate).getTime() / 1000);
         
+        if (!deadlineTimestamp || deadlineTimestamp <= Math.floor(Date.now() / 1000)) {
+          throw new Error("Deadline must be in the future");
+        }
+
         const tx = await this.factoryContract.methods.createEscrow(
           this.beneficiary,
-          "",
           deadlineTimestamp
         ).send({ 
           from: this.currentAccount,
