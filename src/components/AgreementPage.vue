@@ -194,8 +194,8 @@
 
 <script>
 import { getWeb3, getContract } from "../utils/web3";
-import MultisigEscrowFactoryABI from "../../artifacts/contracts/MultisigEscrowFactory.sol/MultisigEscrowFactory.json";
-import MultisigEscrowABI from "../../artifacts/contracts/MultisigEscrow.sol/MultisigEscrow.json";
+import MultisigEscrowFactoryABI from "../abi/MultisigEscrowFactory.json" with { type: "json" };
+import MultisigEscrowABI from "../abi/MultisigEscrow.json" with { type: "json" };
 import './AgreementPage.css';
 
 export default {
@@ -271,13 +271,16 @@ export default {
     async initializeWeb3() {
       try {
         this.web3 = await getWeb3();
+        const factoryAddress = import.meta.env.VITE_FACTORY_ADDRESS;
+        console.log('Factory Address:', factoryAddress);
         this.factoryContract = await getContract(
           this.web3,
           MultisigEscrowFactoryABI,
-          process.env.VUE_APP_FACTORY_ADDRESS
+          factoryAddress
         );
       } catch (error) {
         this.error = "Failed to initialize Web3: " + error.message;
+        console.error("Web3 initialization error:", error);
       }
     },
 

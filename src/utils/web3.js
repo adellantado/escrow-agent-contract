@@ -30,7 +30,7 @@ export const getContract = async (web3, contractABI, contractAddress) => {
       throw new Error("Web3 instance is not initialized");
     }
 
-    if (!contractABI || !contractABI.abi) {
+    if (!contractABI || !Array.isArray(contractABI)) {
       console.error("Invalid contract ABI:", contractABI);
       throw new Error("Invalid contract ABI");
     }
@@ -40,12 +40,12 @@ export const getContract = async (web3, contractABI, contractAddress) => {
     }
 
     // Create contract instance with the ABI
-    const contract = new web3.eth.Contract(contractABI.abi, contractAddress);
+    const contract = new web3.eth.Contract(contractABI, contractAddress);
     
     // Verify the contract has the expected methods
-    if (!contract.methods.createAgreement) {
+    if (!contract.methods.createEscrow) {
       console.error("Contract methods:", Object.keys(contract.methods));
-      throw new Error("Contract ABI does not contain createAgreement method");
+      throw new Error("Contract ABI does not contain createEscrow method");
     }
     
     return contract;
