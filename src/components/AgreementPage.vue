@@ -84,31 +84,6 @@
               />
             </div>
 
-            <div class="form-group">
-              <label for="file">Agreement Document</label>
-              <div class="file-upload-container">
-                <input 
-                  type="file" 
-                  id="file"
-                  ref="fileInput"
-                  @change="handleFileUpload"
-                  class="file-input"
-                  :disabled="loading"
-                />
-                <div 
-                  class="btn btn-upload"
-                  :class="{ 'disabled': loading }"
-                  @click="triggerFileInput"
-                >
-                  {{ selectedFile ? selectedFile.name : 'Choose File' }}
-                </div>
-                <div v-if="ipfsHash" class="ipfs-hash">
-                  <span class="hash-label">IPFS Hash:</span>
-                  <span class="hash-value">{{ ipfsHash }}</span>
-                </div>
-              </div>
-            </div>
-
             <button 
               type="submit" 
               class="btn btn-primary"
@@ -221,7 +196,6 @@
 import { getWeb3, getContract } from "../utils/web3";
 import MultisigEscrowFactoryABI from "../../artifacts/contracts/MultisigEscrowFactory.sol/MultisigEscrowFactory.json";
 import MultisigEscrowABI from "../../artifacts/contracts/MultisigEscrow.sol/MultisigEscrow.json";
-import { create } from 'ipfs-http-client';
 import './AgreementPage.css';
 
 export default {
@@ -243,11 +217,6 @@ export default {
       web3: null,
       isConnected: false,
       currentAccount: null,
-      
-      // File handling
-      selectedFile: null,
-      ipfsHash: null,
-      ipfs: null,
       
       // UI state
       loading: false,
@@ -315,15 +284,11 @@ export default {
     async deployContract() {
       try {
         this.loading = true;
-        if (!this.ipfsHash) {
-          throw new Error("Please upload a document first");
-        }
-
         const deadlineTimestamp = Math.floor(new Date(this.deadlineDate).getTime() / 1000);
         
         const tx = await this.factoryContract.methods.createEscrow(
           this.beneficiary,
-          this.ipfsHash,
+          "",
           deadlineTimestamp
         ).send({ 
           from: this.currentAccount,
@@ -362,26 +327,6 @@ export default {
       } catch (error) {
         this.error = "Failed to load contract details: " + error.message;
       }
-    },
-
-    async handleFileUpload(event) {
-      try {
-        this.loading = true;
-        const file = event.target.files[0];
-        if (!file) return;
-
-        this.selectedFile = file;
-        const added = await this.ipfs.add(file);
-        this.ipfsHash = added.path;
-      } catch (error) {
-        this.error = "Failed to upload file: " + error.message;
-      } finally {
-        this.loading = false;
-      }
-    },
-
-    triggerFileInput() {
-      this.$refs.fileInput.click();
     },
 
     getCurrentDateTime() {
@@ -491,8 +436,6 @@ export default {
         this.web3 = null;
         this.factoryContract = null;
         this.escrowContract = null;
-        this.selectedFile = null;
-        this.ipfsHash = null;
         this.contractDetails = null;
       } catch (error) {
         this.error = "Failed to disconnect wallet: " + error.message;
@@ -503,9 +446,6 @@ export default {
   },
 
   async created() {
-    // Initialize IPFS client
-    this.ipfs = create({ url: 'https://ipfs.infura.io:5001' });
-
     // Check if wallet is already connected
     if (window.ethereum) {
       const accounts = await window.ethereum.request({ method: 'eth_accounts' });
