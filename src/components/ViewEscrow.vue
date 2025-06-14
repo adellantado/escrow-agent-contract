@@ -2,7 +2,7 @@
   <div class="view-escrow">
     <div class="card">
       <div class="title-section">
-        <h2>View Escrow</h2>
+      <h2>View Escrow</h2>
         <a 
           v-if="escrowAddress"
           :href="`https://etherscan.io/address/${escrowAddress}`"
@@ -70,7 +70,7 @@
             <span class="detail-label">Status</span>
             <span class="detail-value status-container">
               <span :class="contractDetails.status.toLowerCase()">
-                {{ contractDetails.status }}
+              {{ contractDetails.status }}
               </span>
               <span 
                 class="info-icon" 
@@ -222,7 +222,7 @@ export default {
       if (days > 0) {
         return `${days}d ${hours}h`;
       } else {
-        return `${hours}h ${minutes}m ${seconds}s`;
+      return `${hours}h ${minutes}m ${seconds}s`;
       }
     },
     canApprove() {
@@ -339,7 +339,7 @@ export default {
           const threeDaysAfterDeadline = deadline + (3 * 24 * 60 * 60);
           this.timeRemaining = Math.max(0, threeDaysAfterDeadline - now);
         } else {
-          this.timeRemaining = Math.max(0, this.contractDetails.deadlineDate - now);
+        this.timeRemaining = Math.max(0, this.contractDetails.deadlineDate - now);
         }
         
         if (this.timeRemaining <= 0) {
