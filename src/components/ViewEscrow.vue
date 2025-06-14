@@ -1,7 +1,18 @@
 <template>
   <div class="view-escrow">
     <div class="card">
-      <h2>View Escrow</h2>
+      <div class="title-section">
+        <h2>View Escrow</h2>
+        <a 
+          v-if="escrowAddress"
+          :href="`https://etherscan.io/address/${escrowAddress}`"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="etherscan-link"
+        >
+          View on Etherscan ↗
+        </a>
+      </div>
       
       <!-- Address Input -->
       <div v-if="!escrowAddress" class="form-group">
@@ -593,5 +604,30 @@ export default {
 .btn:hover:not(:disabled) {
   transform: translateY(-2px);
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+.title-section {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.title-section h2 {
+  margin: 0;
+}
+
+.etherscan-link {
+  color: #2196F3;
+  text-decoration: none;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.etherscan-link:hover {
+  text-decoration: underline;
 }
 </style> 
