@@ -74,7 +74,7 @@
             <button 
               v-if="canRevoke"
               @click="revokeAgreement"
-              class="btn btn-action"
+              class="btn btn-action btn-warning"
               :disabled="loading"
             >
               Revoke Agreement
@@ -82,7 +82,7 @@
             <button 
               v-if="canApprove"
               @click="approveAgreement"
-              class="btn btn-action"
+              class="btn btn-action btn-success"
               :disabled="loading"
             >
               Approve Agreement
@@ -90,7 +90,7 @@
             <button 
               v-if="canReject"
               @click="rejectAgreement"
-              class="btn btn-action"
+              class="btn btn-action btn-danger"
               :disabled="loading"
             >
               Reject Agreement
@@ -98,7 +98,7 @@
             <button 
               v-if="canRefund"
               @click="refundAgreement"
-              class="btn btn-action"
+              class="btn btn-action btn-warning"
               :disabled="loading"
             >
               Refund Agreement
@@ -106,7 +106,7 @@
             <button 
               v-if="canRelease"
               @click="releaseFunds"
-              class="btn btn-action"
+              class="btn btn-action btn-success"
               :disabled="loading"
             >
               Release Funds
@@ -114,7 +114,7 @@
             <button 
               v-if="canWithdraw"
               @click="withdrawFunds"
-              class="btn btn-action"
+              class="btn btn-action btn-success"
               :disabled="loading"
             >
               Withdraw Funds
@@ -122,7 +122,7 @@
             <button 
               v-if="canRemoveFunds"
               @click="removeFunds"
-              class="btn btn-action"
+              class="btn btn-action btn-success"
               :disabled="loading"
             >
               Remove Funds
@@ -130,7 +130,7 @@
             <button 
               v-if="canLock"
               @click="lockFunds"
-              class="btn btn-action"
+              class="btn btn-action btn-danger"
               :disabled="loading"
             >
               Lock Funds
@@ -146,7 +146,7 @@
             <button 
               v-if="canApproveMultisig"
               @click="approveMultisig"
-              class="btn btn-action"
+              class="btn btn-action btn-success"
               :disabled="loading"
             >
               Approve Multisig
@@ -154,7 +154,7 @@
             <button 
               v-if="canPause"
               @click="pause"
-              class="btn btn-action"
+              class="btn btn-action btn-success"
               :disabled="loading"
             >
               Pause Contract
@@ -567,11 +567,10 @@ export default {
 }
 
 .actions-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 1rem;
   margin-top: 1rem;
-  justify-items: center;
 }
 
 .btn {
@@ -629,5 +628,20 @@ export default {
 
 .etherscan-link:hover {
   text-decoration: underline;
+}
+
+.btn-success {
+  background: #4CAF50;
+  color: white;
+}
+
+.btn-danger {
+  background: #f44336;
+  color: white;
+}
+
+.btn-warning {
+  background: #ffc107;
+  color: #000;
 }
 </style> 
