@@ -51,25 +51,11 @@
     </div>
 
     <main class="main-content">
-      <!-- Initial View -->
-      <InitView 
-        v-if="isConnected && currentView === 'init'"
-        @create-escrow="currentView = 'create_escrow'"
-        @view-escrow="currentView = 'view_escrow'"
-      />
-
-      <!-- Create Escrow View -->
-      <CreateEscrow
-        v-if="isConnected && currentView === 'create_escrow'"
+      <router-view 
+        v-if="isConnected"
         :current-account="currentAccount"
+        @create-escrow="handleCreateEscrow"
         @escrow-created="handleEscrowCreated"
-      />
-
-      <!-- View Escrow -->
-      <ViewEscrow
-        v-if="isConnected && currentView === 'view_escrow'"
-        :current-account="currentAccount"
-        :escrow-address="currentEscrowAddress"
       />
     </main>
   </div>
@@ -90,12 +76,10 @@ export default {
   },
   data() {
     return {
-      currentView: 'init',
       isConnected: false,
       currentAccount: null,
       loading: false,
       error: null,
-      currentEscrowAddress: null,
       isMenuOpen: false
     };
   },
@@ -131,7 +115,7 @@ export default {
         this.loading = true;
         this.isConnected = false;
         this.currentAccount = null;
-        this.currentView = 'init';
+        this.$router.push('/');
       } catch (error) {
         this.error = "Failed to disconnect wallet: " + error.message;
       } finally {
@@ -143,9 +127,12 @@ export default {
       return `${address.slice(0, 6)}...${address.slice(-4)}`;
     },
 
+    handleCreateEscrow() {
+      this.$router.push('/create');
+    },
+
     handleEscrowCreated(escrowAddress) {
-      this.currentEscrowAddress = escrowAddress;
-      this.currentView = 'view_escrow';
+      this.$router.push(`/view/${escrowAddress}`);
     }
   },
 

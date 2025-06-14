@@ -5,18 +5,18 @@
       <p class="subtitle">Choose an action to get started</p>
       
       <div class="actions-grid">
-        <button 
-          @click="$emit('create-escrow')" 
+        <router-link 
+          to="/create" 
           class="btn btn-primary"
         >
           Create Escrow
-        </button>
-        <button 
-          @click="$emit('view-escrow')" 
+        </router-link>
+        <router-link 
+          to="/view/new" 
           class="btn btn-secondary"
         >
           View Escrow
-        </button>
+        </router-link>
       </div>
     </div>
   </div>
@@ -24,8 +24,7 @@
 
 <script>
 export default {
-  name: 'InitView',
-  emits: ['create-escrow', 'view-escrow']
+  name: 'InitView'
 }
 </script>
 
@@ -61,6 +60,9 @@ export default {
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.3s ease;
+  text-decoration: none;
+  display: inline-block;
+  text-align: center;
 }
 
 .btn-primary {

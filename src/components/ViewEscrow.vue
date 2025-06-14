@@ -209,7 +209,7 @@ export default {
       type: String,
       required: true
     },
-    escrowAddress: {
+    address: {
       type: String,
       default: null
     }
@@ -297,10 +297,10 @@ export default {
     },
   },
   watch: {
-    escrowAddress: {
+    address: {
       immediate: true,
       handler(newAddress) {
-        if (newAddress) {
+        if (newAddress && newAddress !== 'new') {
           this.inputAddress = newAddress;
           this.loadEscrowDetails();
         }
