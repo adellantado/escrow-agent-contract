@@ -1,0 +1,444 @@
+<template>
+  <div class="view-escrow">
+    <div class="card">
+      <h2>View Escrow</h2>
+      
+      <!-- Address Input -->
+      <div v-if="!escrowAddress" class="form-group">
+        <label for="escrowAddress">Escrow Contract Address</label>
+        <input 
+          type="text" 
+          v-model="inputAddress" 
+          placeholder="0x..." 
+          class="input"
+          :disabled="loading"
+        />
+        <button 
+          @click="loadEscrowDetails" 
+          class="btn btn-primary"
+          :disabled="loading || !inputAddress"
+        >
+          {{ loading ? 'Loading...' : 'View Details' }}
+        </button>
+      </div>
+
+      <!-- Escrow Details -->
+      <div v-else class="escrow-details">
+        <div class="countdown-section">
+          <h3>Time Remaining</h3>
+          <div class="countdown-timer" :class="{ 'warning': timeRemaining < 3600 }">
+            {{ formatTimeRemaining }}
+          </div>
+        </div>
+
+        <div class="details-grid">
+          <div class="detail-item">
+            <span class="detail-label">Contract Address</span>
+            <span class="detail-value">{{ formatAddress(escrowAddress) }}</span>
+          </div>
+          <div class="detail-item">
+            <span class="detail-label">Created Date</span>
+            <span class="detail-value">{{ formatDate(contractDetails.startDate) }}</span>
+          </div>
+          <div class="detail-item">
+            <span class="detail-label">Deadline</span>
+            <span class="detail-value">{{ formatDate(contractDetails.deadlineDate) }}</span>
+          </div>
+          <div class="detail-item">
+            <span class="detail-label">Value Locked</span>
+            <span class="detail-value">{{ formatEth(contractDetails.amount) }} ETH</span>
+          </div>
+          <div class="detail-item">
+            <span class="detail-label">Status</span>
+            <span class="detail-value" :class="contractDetails.status.toLowerCase()">
+              {{ contractDetails.status }}
+            </span>
+          </div>
+        </div>
+
+        <!-- Available Actions -->
+        <div class="actions-section">
+          <h3>Available Actions</h3>
+          <div class="actions-grid">
+            <button 
+              v-if="canApprove"
+              @click="approveAgreement"
+              class="btn btn-action"
+              :disabled="loading"
+            >
+              Approve Agreement
+            </button>
+            <button 
+              v-if="canReject"
+              @click="rejectAgreement"
+              class="btn btn-action"
+              :disabled="loading"
+            >
+              Reject Agreement
+            </button>
+            <button 
+              v-if="canRefund"
+              @click="refundAgreement"
+              class="btn btn-action"
+              :disabled="loading"
+            >
+              Refund Agreement
+            </button>
+            <button 
+              v-if="canRelease"
+              @click="releaseFunds"
+              class="btn btn-action"
+              :disabled="loading"
+            >
+              Release Funds
+            </button>
+            <button 
+              v-if="canWithdraw"
+              @click="withdrawFunds"
+              class="btn btn-action"
+              :disabled="loading"
+            >
+              Withdraw Funds
+            </button>
+            <button 
+              v-if="canRaiseDispute"
+              @click="raiseDispute"
+              class="btn btn-action"
+              :disabled="loading"
+            >
+              Raise Dispute
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script>
+import { getWeb3, getContract } from "../utils/web3";
+import MultisigEscrowABI from "../abi/MultisigEscrow.json" with { type: "json" };
+
+export default {
+  name: 'ViewEscrow',
+  props: {
+    currentAccount: {
+      type: String,
+      required: true
+    }
+  },
+  data() {
+    return {
+      inputAddress: '',
+      escrowAddress: null,
+      contractDetails: null,
+      escrowContract: null,
+      loading: false,
+      error: null,
+      timeRemaining: 0,
+      timer: null
+    };
+  },
+  computed: {
+    formatTimeRemaining() {
+      if (this.timeRemaining <= 0) return 'Expired';
+      
+      const hours = Math.floor(this.timeRemaining / 3600);
+      const minutes = Math.floor((this.timeRemaining % 3600) / 60);
+      const seconds = this.timeRemaining % 60;
+      
+      return `${hours}h ${minutes}m ${seconds}s`;
+    },
+    canApprove() {
+      return this.contractDetails?.status === 'FUNDED' && 
+             this.currentAccount === this.contractDetails.beneficiary;
+    },
+    canReject() {
+      return this.contractDetails?.status === 'FUNDED' && 
+             this.currentAccount === this.contractDetails.beneficiary;
+    },
+    canRefund() {
+      return this.contractDetails?.status === 'ACTIVE' && 
+             this.currentAccount === this.contractDetails.beneficiary;
+    },
+    canRelease() {
+      return this.contractDetails?.status === 'ACTIVE' && 
+             (this.currentAccount === this.contractDetails.beneficiary || 
+              this.currentAccount === this.contractDetails.depositor);
+    },
+    canWithdraw() {
+      return ['CLOSED', 'CANCELED', 'REJECTED', 'REFUNDED', 'RESOLVED', 'UNRESOLVED']
+        .includes(this.contractDetails?.status);
+    },
+    canRaiseDispute() {
+      return this.contractDetails?.status === 'ACTIVE' && 
+             this.currentAccount === this.contractDetails.depositor &&
+             Date.now() / 1000 > this.contractDetails.deadlineDate;
+    }
+  },
+  methods: {
+    async loadEscrowDetails() {
+      try {
+        this.loading = true;
+        this.error = null;
+
+        this.web3 = await getWeb3();
+        this.escrowContract = await getContract(
+          this.web3,
+          MultisigEscrowABI,
+          this.inputAddress
+        );
+
+        const details = await this.escrowContract.methods.getAgreementDetails().call(
+            { from: this.currentAccount }
+        );
+        
+        this.contractDetails = {
+          amount: this.web3.utils.fromWei(details[0], 'ether'),
+          startDate: parseInt(details[1]),
+          deadlineDate: parseInt(details[2]),
+          status: this.getStatusString(parseInt(details[3])),
+          multisigAddress: details[4],
+          approved: details[5],
+        };
+
+        this.escrowAddress = this.inputAddress;
+        this.startCountdown();
+      } catch (error) {
+        console.error('Load escrow details error:', error);
+        this.error = "Failed to load escrow details: " + error.message;
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    startCountdown() {
+      if (this.timer) clearInterval(this.timer);
+      
+      this.timer = setInterval(() => {
+        const now = Math.floor(Date.now() / 1000);
+        this.timeRemaining = Math.max(0, this.contractDetails.deadlineDate - now);
+        
+        if (this.timeRemaining <= 0) {
+          clearInterval(this.timer);
+        }
+      }, 1000);
+    },
+
+    formatAddress(address) {
+      return `${address.slice(0, 6)}...${address.slice(-4)}`;
+    },
+
+    formatDate(timestamp) {
+      if (!timestamp) return 'N/A';
+      const date = new Date(timestamp * 1000);
+      return date.toLocaleString(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    },
+
+    formatEth(amount) {
+      return parseFloat(amount).toFixed(4);
+    },
+
+    getStatusString(statusInt) {
+      const statusMap = {
+        0: 'Funded',
+        1: 'Revoked',
+        2: 'Rejected',
+        3: 'Active',
+        4: 'Refunded',
+        5: 'Closed',
+        6: 'Locked'
+      };
+      return statusMap[statusInt] || 'Unknown';
+    },
+
+    // Contract Actions
+    async approveAgreement() {
+      try {
+        this.loading = true;
+        await this.escrowContract.methods.approveAgreement().send({ from: this.currentAccount });
+        await this.loadEscrowDetails();
+      } catch (error) {
+        this.error = "Failed to approve agreement: " + error.message;
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    async rejectAgreement() {
+      try {
+        this.loading = true;
+        await this.escrowContract.methods.rejectAgreement().send({ from: this.currentAccount });
+        await this.loadEscrowDetails();
+      } catch (error) {
+        this.error = "Failed to reject agreement: " + error.message;
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    async refundAgreement() {
+      try {
+        this.loading = true;
+        await this.escrowContract.methods.refundAgreement().send({ from: this.currentAccount });
+        await this.loadEscrowDetails();
+      } catch (error) {
+        this.error = "Failed to refund agreement: " + error.message;
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    async releaseFunds() {
+      try {
+        this.loading = true;
+        await this.escrowContract.methods.releaseFunds().send({ from: this.currentAccount });
+        await this.loadEscrowDetails();
+      } catch (error) {
+        this.error = "Failed to release funds: " + error.message;
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    async withdrawFunds() {
+      try {
+        this.loading = true;
+        await this.escrowContract.methods.withdrawFunds().send({ from: this.currentAccount });
+        await this.loadEscrowDetails();
+      } catch (error) {
+        this.error = "Failed to withdraw funds: " + error.message;
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    async raiseDispute() {
+      try {
+        this.loading = true;
+        await this.escrowContract.methods.raiseDispute().send({ from: this.currentAccount });
+        await this.loadEscrowDetails();
+      } catch (error) {
+        this.error = "Failed to raise dispute: " + error.message;
+      } finally {
+        this.loading = false;
+      }
+    }
+  },
+  beforeUnmount() {
+    if (this.timer) clearInterval(this.timer);
+  }
+};
+</script>
+
+<style scoped>
+.view-escrow {
+  max-width: 800px;
+  margin: 2rem auto;
+}
+
+.card {
+  background: white;
+  border-radius: 12px;
+  padding: 2rem;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.form-group {
+  margin-bottom: 1.5rem;
+}
+
+.input {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+}
+
+.countdown-section {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.countdown-timer {
+  font-size: 2rem;
+  font-weight: bold;
+  color: #4CAF50;
+  margin: 1rem 0;
+}
+
+.countdown-timer.warning {
+  color: #f44336;
+}
+
+.details-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.detail-item {
+  padding: 1rem;
+  background: #f5f5f5;
+  border-radius: 8px;
+}
+
+.detail-label {
+  display: block;
+  font-size: 0.9rem;
+  color: #666;
+  margin-bottom: 0.5rem;
+}
+
+.detail-value {
+  font-weight: 500;
+}
+
+.actions-section {
+  margin-top: 2rem;
+}
+
+.actions-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.btn {
+  padding: 0.75rem 1.5rem;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  border: none;
+  font-weight: 500;
+}
+
+.btn-primary {
+  background: #4CAF50;
+  color: white;
+}
+
+.btn-action {
+  background: #2196F3;
+  color: white;
+}
+
+.btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+</style> 
