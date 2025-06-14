@@ -7,30 +7,41 @@
           <p class="subtitle">Secure and transparent multisig escrow service</p>
         </div>
         <div class="connection-status">
-          <div v-if="currentAccount" class="account-info">
-            <span class="account-label">Account:</span>
-            <span class="account-address">{{ formatAddress(currentAccount) }}</span>
-          </div>
-          <div class="status-indicator" :class="{ connected: isConnected }">
-            <span class="status-dot" :class="{ connected: isConnected }">●</span>
-            <span class="status-text">{{ isConnected ? 'Connected' : 'Disconnected' }}</span>
-          </div>
           <button 
-            v-if="!isConnected" 
-            @click="connectWallet" 
-            class="btn btn-connect"
-            :disabled="loading"
+            class="menu-toggle"
+            @click="toggleMenu"
+            :class="{ active: isMenuOpen }"
           >
-            Connect Wallet
+            <span></span>
+            <span></span>
+            <span></span>
           </button>
-          <button 
-            v-if="isConnected" 
-            @click="disconnectWallet" 
-            class="btn btn-disconnect"
-            :disabled="loading"
-          >
-            Disconnect
-          </button>
+          <div class="mobile-menu" :class="{ active: isMenuOpen }">
+            <div v-if="currentAccount" class="account-info">
+              <span class="account-label">Account:</span>
+              <span class="account-address">{{ formatAddress(currentAccount) }}</span>
+            </div>
+            <div class="status-indicator" :class="{ connected: isConnected }">
+              <span class="status-dot" :class="{ connected: isConnected }">●</span>
+              <span class="status-text">{{ isConnected ? 'Connected' : 'Disconnected' }}</span>
+            </div>
+            <button 
+              v-if="!isConnected" 
+              @click="connectWallet" 
+              class="btn btn-connect"
+              :disabled="loading"
+            >
+              Connect Wallet
+            </button>
+            <button 
+              v-if="isConnected" 
+              @click="disconnectWallet" 
+              class="btn btn-disconnect"
+              :disabled="loading"
+            >
+              Disconnect
+            </button>
+          </div>
         </div>
       </div>
     </header>
@@ -84,10 +95,14 @@ export default {
       currentAccount: null,
       loading: false,
       error: null,
-      currentEscrowAddress: null
+      currentEscrowAddress: null,
+      isMenuOpen: false
     };
   },
   methods: {
+    toggleMenu() {
+      this.isMenuOpen = !this.isMenuOpen;
+    },
     async connectWallet() {
       try {
         this.loading = true;
@@ -256,5 +271,94 @@ export default {
   max-width: 1200px;
   margin: 0 auto;
   padding: 2rem 1rem;
+}
+
+.menu-toggle {
+  display: none;
+  flex-direction: column;
+  justify-content: space-between;
+  width: 30px;
+  height: 21px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  z-index: 10;
+}
+
+.menu-toggle span {
+  display: block;
+  width: 100%;
+  height: 3px;
+  background: #333;
+  border-radius: 3px;
+  transition: all 0.3s ease;
+}
+
+.menu-toggle.active span:nth-child(1) {
+  transform: translateY(9px) rotate(45deg);
+}
+
+.menu-toggle.active span:nth-child(2) {
+  opacity: 0;
+}
+
+.menu-toggle.active span:nth-child(3) {
+  transform: translateY(-9px) rotate(-45deg);
+}
+
+.mobile-menu {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+@media (max-width: 768px) {
+  .menu-toggle {
+    display: flex;
+  }
+
+  .mobile-menu {
+    position: fixed;
+    top: 0;
+    right: 0;
+    width: 100%;
+    height: 100vh;
+    background: white;
+    flex-direction: column;
+    padding-top: 5rem;
+    transform: translateX(100%);
+    transition: transform 0.3s ease;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    text-align: center;
+  }
+
+  .mobile-menu .account-info,
+  .mobile-menu .status-indicator {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .mobile-menu .btn {
+    width: 200px;
+  }
+
+  .mobile-menu.active {
+    transform: translateX(0);
+  }
+
+  .subtitle {
+    display: none;
+  }
+
+  .header-content {
+    padding: 0 1rem;
+  }
+
+  .title-section h1 {
+    font-size: 1.25rem;
+  }
 }
 </style>
