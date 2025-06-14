@@ -260,7 +260,8 @@ export default {
     },
     canPause() {
       return ['REVOKED', 'REJECTED', 'REFUNDED', 'CLOSED'].includes(this.contractDetails?.status) && 
-             this.currentAccount.toLowerCase() === this.contractDetails.depositor.toLowerCase();
+             this.currentAccount.toLowerCase() === this.contractDetails.depositor.toLowerCase() &&
+             parseFloat(this.contractDetails.amount) > 0;
     }
   },
   watch: {
