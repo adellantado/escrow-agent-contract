@@ -120,16 +120,6 @@
                 {{ contractDetails.status }}
               </span>
             </div>
-            <div class="detail-item">
-              <span class="detail-label">IPFS Document</span>
-              <a 
-                :href="`https://ipfs.io/ipfs/${contractDetails.detailsHash}`" 
-                target="_blank"
-                class="ipfs-link"
-              >
-                View Document
-              </a>
-            </div>
           </div>
 
           <!-- Available Actions -->
