@@ -4,7 +4,7 @@
       <header class="header">
         <div class="header-content">
           <div class="title-section">
-            <h1>Multisig Escrow</h1>
+            <h1>Multisig Escrow 🔗</h1>
             <p class="subtitle">Secure and transparent multisig escrow service</p>
           </div>
           <div class="connection-status">
@@ -287,6 +287,8 @@ export default {
     async deployContract() {
       try {
         this.loading = true;
+        this.error = null;
+
         // Convert deadline to Unix timestamp (seconds)
         const deadlineTimestamp = Math.floor(new Date(this.deadlineDate).getTime() / 1000);
         
@@ -294,10 +296,11 @@ export default {
           throw new Error("Deadline must be in the future");
         }
 
-        console.log('Sending transaction with params:', {
+        console.log('Deploying contract with params:', {
           beneficiary: this.beneficiary,
           deadlineTimestamp,
-          amount: this.amount
+          amount: this.amount,
+          from: this.currentAccount
         });
 
         // Send the transaction
@@ -306,18 +309,29 @@ export default {
           deadlineTimestamp
         ).send({ 
           from: this.currentAccount,
-          value: this.web3.utils.toWei(this.amount, 'ether')
+          value: this.web3.utils.toWei(this.amount, 'ether'),
+          gas: 5000000 // Add explicit gas limit
         });
+
         console.log('Transaction sent:', tx);
+
+        if (!tx || !tx.events) {
+          throw new Error("Transaction failed or no events emitted");
+        }
 
         // Get the EscrowCreated event from the transaction events
         const event = tx.events.EscrowCreated;
         if (!event) {
+          console.error('Transaction events:', tx.events);
           throw new Error("EscrowCreated event not found in transaction");
         }
 
         const escrowAddress = event.returnValues.escrow;
         console.log('Escrow address from event:', escrowAddress);
+
+        if (!escrowAddress) {
+          throw new Error("No escrow address in event");
+        }
 
         // Verify the contract was deployed
         const code = await this.web3.eth.getCode(escrowAddress);
@@ -332,7 +346,10 @@ export default {
         await this.loadContractDetails();
       } catch (error) {
         console.error('Deploy contract error:', error);
-        this.error = "Failed to deploy contract: " + error.message;
+        if (error.data) {
+          console.error('Error data:', error.data);
+        }
+        this.error = "Failed to deploy contract: " + (error.message || error);
       } finally {
         this.loading = false;
       }
@@ -340,14 +357,27 @@ export default {
 
     async loadContractDetails() {
       try {
+        this.loading = true;
+        this.error = null;
+
+        if (!this.deployedContract) {
+          throw new Error("No contract address provided");
+        }
+
         this.escrowContract = await getContract(
           this.web3,
           MultisigEscrowABI,
           this.deployedContract
         );
 
-        const details = await this.escrowContract.methods.getAgreementDetails().call();
+        console.log('Calling getAgreementDetails from:', this.currentAccount);
+        const details = await this.escrowContract.methods.getAgreementDetails().call({ 
+          from: this.currentAccount 
+        });
+        console.log('Agreement details:', details);
+
         const status = await this.escrowContract.methods.getAgreementStatus().call();
+        console.log('Agreement status:', status);
 
         this.contractDetails = {
           depositor: details[0],
@@ -359,12 +389,23 @@ export default {
           status: status
         };
       } catch (error) {
-        this.error = "Failed to load contract details: " + error.message;
+        console.error('Load contract details error:', error);
+        if (error.data) {
+          console.error('Error data:', error.data);
+        }
+        this.error = "Failed to load contract details: " + (error.message || error);
+        // Reset contract state on error
+        this.escrowContract = null;
+        this.contractDetails = null;
+      } finally {
+        this.loading = false;
       }
     },
 
     getCurrentDateTime() {
-      return new Date().toISOString().slice(0, 16);
+      const now = new Date();
+      // Format as YYYY-MM-DDThh:mm
+      return now.toISOString().slice(0, 16);
     },
 
     formatAddress(address) {
@@ -372,7 +413,15 @@ export default {
     },
 
     formatDate(timestamp) {
-      return new Date(timestamp * 1000).toLocaleString();
+      if (!timestamp) return 'N/A';
+      const date = new Date(timestamp * 1000);
+      return date.toLocaleString(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
     },
 
     formatEth(amount) {
@@ -454,11 +503,8 @@ export default {
 
     updateDeadlineTimestamp() {
       if (this.deadlineDate) {
-        // Convert datetime-local value to Unix timestamp, accounting for timezone
         const date = new Date(this.deadlineDate);
-        const timezoneOffset = date.getTimezoneOffset() * 60000;
-        const adjustedDate = new Date(date.getTime() + timezoneOffset);
-        this.deadlineTimestamp = Math.floor(adjustedDate.getTime() / 1000);
+        this.deadlineTimestamp = Math.floor(date.getTime() / 1000);
       }
     },
 
