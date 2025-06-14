@@ -61,6 +61,14 @@
           <h3>Available Actions</h3>
           <div class="actions-grid">
             <button 
+              v-if="canRevoke"
+              @click="revokeAgreement"
+              class="btn btn-action"
+              :disabled="loading"
+            >
+              Revoke Agreement
+            </button>
+            <button 
               v-if="canApprove"
               @click="approveAgreement"
               class="btn btn-action"
@@ -101,12 +109,44 @@
               Withdraw Funds
             </button>
             <button 
-              v-if="canRaiseDispute"
-              @click="raiseDispute"
+              v-if="canRemoveFunds"
+              @click="removeFunds"
               class="btn btn-action"
               :disabled="loading"
             >
-              Raise Dispute
+              Remove Funds
+            </button>
+            <button 
+              v-if="canLock"
+              @click="lockFunds"
+              class="btn btn-action"
+              :disabled="loading"
+            >
+              Lock Funds
+            </button>
+            <button 
+              v-if="canSetMultisig"
+              @click="setMultisig"
+              class="btn btn-action"
+              :disabled="loading"
+            >
+              Set Multisig
+            </button>
+            <button 
+              v-if="canApproveMultisig"
+              @click="approveMultisig"
+              class="btn btn-action"
+              :disabled="loading"
+            >
+              Approve Multisig
+            </button>
+            <button 
+              v-if="canPause"
+              @click="pause"
+              class="btn btn-action"
+              :disabled="loading"
+            >
+              Pause Contract
             </button>
           </div>
         </div>
@@ -125,6 +165,10 @@ export default {
     currentAccount: {
       type: String,
       required: true
+    },
+    escrowAddress: {
+      type: String,
+      default: null
     }
   },
   data() {
@@ -151,29 +195,67 @@ export default {
     },
     canApprove() {
       return this.contractDetails?.status === 'FUNDED' && 
-             this.currentAccount === this.contractDetails.beneficiary;
+             this.currentAccount.toLowerCase() === this.contractDetails.beneficiary.toLowerCase();
     },
     canReject() {
       return this.contractDetails?.status === 'FUNDED' && 
-             this.currentAccount === this.contractDetails.beneficiary;
+             this.currentAccount.toLowerCase() === this.contractDetails.beneficiary.toLowerCase();
+    },
+    canRevoke() {
+      return this.contractDetails?.status === 'FUNDED' && 
+             this.currentAccount.toLowerCase() === this.contractDetails.depositor.toLowerCase();
     },
     canRefund() {
       return this.contractDetails?.status === 'ACTIVE' && 
-             this.currentAccount === this.contractDetails.beneficiary;
+             this.currentAccount.toLowerCase() === this.contractDetails.beneficiary.toLowerCase();
     },
     canRelease() {
       return this.contractDetails?.status === 'ACTIVE' && 
-             (this.currentAccount === this.contractDetails.beneficiary || 
-              this.currentAccount === this.contractDetails.depositor);
+             (this.currentAccount.toLowerCase() === this.contractDetails.beneficiary.toLowerCase() || 
+              this.currentAccount.toLowerCase() === this.contractDetails.depositor.toLowerCase());
     },
     canWithdraw() {
-      return ['CLOSED', 'CANCELED', 'REJECTED', 'REFUNDED', 'RESOLVED', 'UNRESOLVED']
-        .includes(this.contractDetails?.status);
+      return this.contractDetails?.status === 'CLOSED' && 
+             this.currentAccount.toLowerCase() === this.contractDetails.beneficiary.toLowerCase();
     },
-    canRaiseDispute() {
+    canRemoveFunds() {
+      return ['REVOKED', 'REJECTED', 'REFUNDED'].includes(this.contractDetails?.status) && 
+             this.currentAccount.toLowerCase() === this.contractDetails.depositor.toLowerCase();
+    },
+    canLock() {
+      const now = Math.floor(Date.now() / 1000);
+      const deadline = this.contractDetails?.deadlineDate;
+      const threeDaysAfterDeadline = deadline + (3 * 24 * 60 * 60);
       return this.contractDetails?.status === 'ACTIVE' && 
-             this.currentAccount === this.contractDetails.depositor &&
-             Date.now() / 1000 > this.contractDetails.deadlineDate;
+             this.currentAccount.toLowerCase() === this.contractDetails.depositor.toLowerCase() &&
+             now > deadline &&
+             now < threeDaysAfterDeadline;
+    },
+    canSetMultisig() {
+      return this.contractDetails?.status === 'LOCKED' && 
+             this.currentAccount.toLowerCase() === this.contractDetails.beneficiary.toLowerCase() &&
+             !this.contractDetails.approved;
+    },
+    canApproveMultisig() {
+      return this.contractDetails?.status === 'LOCKED' && 
+             this.currentAccount.toLowerCase() === this.contractDetails.depositor.toLowerCase() &&
+             this.contractDetails.multisig.toLowerCase() !== '0x0000000000000000000000000000000000000000' &&
+             !this.contractDetails.approved;
+    },
+    canPause() {
+      return ['REVOKED', 'REJECTED', 'REFUNDED', 'CLOSED'].includes(this.contractDetails?.status) && 
+             this.currentAccount.toLowerCase() === this.contractDetails.depositor.toLowerCase();
+    }
+  },
+  watch: {
+    escrowAddress: {
+      immediate: true,
+      handler(newAddress) {
+        if (newAddress) {
+          this.inputAddress = newAddress;
+          this.loadEscrowDetails();
+        }
+      }
     }
   },
   methods: {
@@ -198,8 +280,10 @@ export default {
           startDate: parseInt(details[1]),
           deadlineDate: parseInt(details[2]),
           status: this.getStatusString(parseInt(details[3])),
-          multisigAddress: details[4],
-          approved: details[5],
+          depositor: details[4],
+          beneficiary: details[5],
+          multisig: details[6],
+          approved: details[7],
         };
 
         this.escrowAddress = this.inputAddress;
@@ -247,18 +331,30 @@ export default {
 
     getStatusString(statusInt) {
       const statusMap = {
-        0: 'Funded',
-        1: 'Revoked',
-        2: 'Rejected',
-        3: 'Active',
-        4: 'Refunded',
-        5: 'Closed',
-        6: 'Locked'
+        0: 'FUNDED',
+        1: 'REVOKED',
+        2: 'REJECTED',
+        3: 'ACTIVE',
+        4: 'REFUNDED',
+        5: 'CLOSED',
+        6: 'LOCKED'
       };
-      return statusMap[statusInt] || 'Unknown';
+      return statusMap[statusInt] || 'UNKNOWN';
     },
 
     // Contract Actions
+    async revokeAgreement() {
+      try {
+        this.loading = true;
+        await this.escrowContract.methods.revokeAgreement().send({ from: this.currentAccount });
+        await this.loadEscrowDetails();
+      } catch (error) {
+        this.error = "Failed to revoke agreement: " + error.message;
+      } finally {
+        this.loading = false;
+      }
+    },
+
     async approveAgreement() {
       try {
         this.loading = true;
@@ -319,13 +415,61 @@ export default {
       }
     },
 
-    async raiseDispute() {
+    async removeFunds() {
       try {
         this.loading = true;
-        await this.escrowContract.methods.raiseDispute().send({ from: this.currentAccount });
+        await this.escrowContract.methods.removeFunds().send({ from: this.currentAccount });
         await this.loadEscrowDetails();
       } catch (error) {
-        this.error = "Failed to raise dispute: " + error.message;
+        this.error = "Failed to remove funds: " + error.message;
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    async lockFunds() {
+      try {
+        this.loading = true;
+        await this.escrowContract.methods.lockFunds().send({ from: this.currentAccount });
+        await this.loadEscrowDetails();
+      } catch (error) {
+        this.error = "Failed to lock funds: " + error.message;
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    async setMultisig(multisigAddress) {
+      try {
+        this.loading = true;
+        await this.escrowContract.methods.setMultisig(multisigAddress).send({ from: this.currentAccount });
+        await this.loadEscrowDetails();
+      } catch (error) {
+        this.error = "Failed to set multisig: " + error.message;
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    async approveMultisig() {
+      try {
+        this.loading = true;
+        await this.escrowContract.methods.approveMultisig().send({ from: this.currentAccount });
+        await this.loadEscrowDetails();
+      } catch (error) {
+        this.error = "Failed to approve multisig: " + error.message;
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    async pause() {
+      try {
+        this.loading = true;
+        await this.escrowContract.methods.pause().send({ from: this.currentAccount });
+        await this.loadEscrowDetails();
+      } catch (error) {
+        this.error = "Failed to pause contract: " + error.message;
       } finally {
         this.loading = false;
       }

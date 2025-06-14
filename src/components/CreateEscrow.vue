@@ -157,6 +157,12 @@ export default {
         
         // Emit success event with the escrow address
         this.$emit('escrow-created', escrowAddress);
+        
+        // Clear form
+        this.beneficiary = "";
+        this.amount = "";
+        this.deadlineDate = "";
+        this.deadlineTimestamp = 0;
       } catch (error) {
         console.error('Deploy contract error:', error);
         if (error.data) {

@@ -58,6 +58,7 @@
       <ViewEscrow
         v-if="isConnected && currentView === 'view_escrow'"
         :current-account="currentAccount"
+        :escrow-address="currentEscrowAddress"
       />
     </main>
   </div>
@@ -82,7 +83,8 @@ export default {
       isConnected: false,
       currentAccount: null,
       loading: false,
-      error: null
+      error: null,
+      currentEscrowAddress: null
     };
   },
   methods: {
@@ -127,6 +129,7 @@ export default {
     },
 
     handleEscrowCreated(escrowAddress) {
+      this.currentEscrowAddress = escrowAddress;
       this.currentView = 'view_escrow';
     }
   },
