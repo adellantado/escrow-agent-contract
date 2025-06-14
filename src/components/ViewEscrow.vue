@@ -64,7 +64,10 @@
           </div>
           <div class="detail-item">
             <span class="detail-label">Value Locked</span>
-            <span class="detail-value">{{ formatEth(contractDetails.amount) }} ETH</span>
+            <span class="detail-value">
+              {{ formatEth(contractDetails.amount) }} ETH
+              <span v-if="ethPrice" class="usd-value">(≈ ${{ formatUsd(contractDetails.amount) }})</span>
+            </span>
           </div>
           <div class="detail-item">
             <span class="detail-label">Status</span>
@@ -166,14 +169,6 @@
             >
               Approve Multisig
             </button>
-            <button 
-              v-if="canPause"
-              @click="pause"
-              class="btn btn-action btn-success"
-              :disabled="loading"
-            >
-              Pause Contract
-            </button>
           </div>
         </div>
       </div>
@@ -207,7 +202,8 @@ export default {
       error: null,
       timeRemaining: 0,
       timer: null,
-      copyStatus: 'Click to copy'
+      copyStatus: 'Click to copy',
+      ethPrice: null
     };
   },
   computed: {
@@ -243,16 +239,19 @@ export default {
     },
     canRelease() {
       return this.contractDetails?.status === 'ACTIVE' && 
-             (this.currentAccount.toLowerCase() === this.contractDetails.beneficiary.toLowerCase() || 
-              this.currentAccount.toLowerCase() === this.contractDetails.depositor.toLowerCase());
+             (this.currentAccount.toLowerCase() === this.contractDetails.depositor.toLowerCase() || 
+              (this.currentAccount.toLowerCase() === this.contractDetails.beneficiary.toLowerCase() && 
+                this.contractDetails.deadlineDate + (3 * 24 * 60 * 60) < Date.now() / 1000));
     },
     canWithdraw() {
       return this.contractDetails?.status === 'CLOSED' && 
-             this.currentAccount.toLowerCase() === this.contractDetails.beneficiary.toLowerCase();
+             this.currentAccount.toLowerCase() === this.contractDetails.beneficiary.toLowerCase() && 
+             parseFloat(this.contractDetails.amount) !== 0;
     },
     canRemoveFunds() {
       return ['REVOKED', 'REJECTED', 'REFUNDED'].includes(this.contractDetails?.status) && 
-             this.currentAccount.toLowerCase() === this.contractDetails.depositor.toLowerCase();
+             this.currentAccount.toLowerCase() === this.contractDetails.depositor.toLowerCase() &&
+             parseFloat(this.contractDetails.amount) !== 0;
     },
     canLock() {
       const now = Math.floor(Date.now() / 1000);
@@ -274,11 +273,6 @@ export default {
              this.contractDetails.multisig.toLowerCase() !== '0x0000000000000000000000000000000000000000' &&
              !this.contractDetails.approved;
     },
-    canPause() {
-      return ['REVOKED', 'REJECTED', 'REFUNDED', 'CLOSED'].includes(this.contractDetails?.status) && 
-             this.currentAccount.toLowerCase() === this.contractDetails.depositor.toLowerCase() &&
-             parseFloat(this.contractDetails.amount) === 0;
-    }
   },
   watch: {
     escrowAddress: {
@@ -318,6 +312,8 @@ export default {
           multisig: details[6],
           approved: details[7],
         };
+
+        console.log('Contract Details:', this.contractDetails);
 
         this.escrowAddress = this.inputAddress;
         this.startCountdown();
@@ -365,7 +361,7 @@ export default {
     },
 
     formatEth(amount) {
-      return parseFloat(amount).toFixed(4);
+      return parseFloat(amount).toFixed(18).replace(/\.?0+$/, '');
     },
 
     getStatusString(statusInt) {
@@ -515,18 +511,6 @@ export default {
       }
     },
 
-    async pause() {
-      try {
-        this.loading = true;
-        await this.escrowContract.methods.pause().send({ from: this.currentAccount });
-        await this.loadEscrowDetails();
-      } catch (error) {
-        this.error = "Failed to pause contract: " + error.message;
-      } finally {
-        this.loading = false;
-      }
-    },
-
     async copyToClipboard(text) {
       try {
         await navigator.clipboard.writeText(text);
@@ -538,7 +522,31 @@ export default {
         console.error('Failed to copy:', err);
         this.copyStatus = 'Failed to copy';
       }
-    }
+    },
+
+    async fetchEthPrice() {
+      try {
+        const response = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd');
+        const data = await response.json();
+        this.ethPrice = data.ethereum.usd;
+      } catch (error) {
+        console.error('Failed to fetch ETH price:', error);
+      }
+    },
+
+    formatUsd(ethAmount) {
+      if (!this.ethPrice) return '0.00';
+      const usdValue = parseFloat(ethAmount) * this.ethPrice;
+      return usdValue.toLocaleString('en-US', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      });
+    },
+  },
+  async created() {
+    await this.fetchEthPrice();
+    // Update price every 5 minutes
+    setInterval(this.fetchEthPrice, 5 * 60 * 1000);
   },
   beforeUnmount() {
     if (this.timer) clearInterval(this.timer);
@@ -725,5 +733,11 @@ export default {
 
 .info-icon:hover {
   opacity: 1;
+}
+
+.usd-value {
+  color: #666;
+  font-size: 0.9em;
+  margin-left: 0.5rem;
 }
 </style> 

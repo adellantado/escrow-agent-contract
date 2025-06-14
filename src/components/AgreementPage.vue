@@ -418,7 +418,7 @@ export default {
     },
 
     formatEth(amount) {
-      return parseFloat(amount).toFixed(4);
+      return parseFloat(amount).toFixed(18).replace(/\.?0+$/, '');
     },
 
     getStatusString(statusInt) {
