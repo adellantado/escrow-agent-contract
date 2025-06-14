@@ -343,6 +343,11 @@ export default {
         this.deployedContract = escrowAddress;
         console.log('Deployed contract address:', this.deployedContract);
 
+        // debug info
+        // Fetch all contracts for the current account
+        const contracts = await this.factoryContract.methods.getDepositorContracts(this.currentAccount).call();
+        console.log('All contracts for account:', contracts);
+
         await this.loadContractDetails();
       } catch (error) {
         console.error('Deploy contract error:', error);
@@ -376,17 +381,15 @@ export default {
         });
         console.log('Agreement details:', details);
 
-        const status = await this.escrowContract.methods.getAgreementStatus().call();
-        console.log('Agreement status:', status);
-
         this.contractDetails = {
-          depositor: details[0],
-          beneficiary: details[1],
-          amount: this.web3.utils.fromWei(details[2], 'ether'),
-          startDate: parseInt(details[3]),
-          deadlineDate: parseInt(details[4]),
-          detailsHash: details[5],
-          status: status
+          depositor: this.currentAccount,
+          beneficiary: this.beneficiary,
+          amount: this.web3.utils.fromWei(details[0], 'ether'),
+          startDate: parseInt(details[1]),
+          deadlineDate: parseInt(details[2]),
+          status: this.getStatusString(parseInt(details[3])),
+          multisigAddress: details[4],
+          approved: details[5],
         };
       } catch (error) {
         console.error('Load contract details error:', error);
@@ -426,6 +429,19 @@ export default {
 
     formatEth(amount) {
       return parseFloat(amount).toFixed(4);
+    },
+
+    getStatusString(statusInt) {
+      const statusMap = {
+        0: 'Funded',
+        1: 'Revoked',
+        2: 'Rejected',
+        3: 'Active',
+        4: 'Refunded',
+        5: 'Closed',
+        6: 'Locked'
+      };
+      return statusMap[statusInt] || 'Unknown';
     },
 
     // Contract Actions
