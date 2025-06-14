@@ -187,11 +187,16 @@ export default {
     formatTimeRemaining() {
       if (this.timeRemaining <= 0) return 'Expired';
       
-      const hours = Math.floor(this.timeRemaining / 3600);
+      const days = Math.floor(this.timeRemaining / (24 * 3600));
+      const hours = Math.floor((this.timeRemaining % (24 * 3600)) / 3600);
       const minutes = Math.floor((this.timeRemaining % 3600) / 60);
       const seconds = this.timeRemaining % 60;
       
-      return `${hours}h ${minutes}m ${seconds}s`;
+      if (days > 0) {
+        return `${days}d ${hours}h`;
+      } else {
+        return `${hours}h ${minutes}m ${seconds}s`;
+      }
     },
     canApprove() {
       return this.contractDetails?.status === 'FUNDED' && 
