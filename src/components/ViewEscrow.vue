@@ -73,7 +73,7 @@
             <span class="detail-label">Status</span>
             <span class="detail-value status-container">
               <span :class="contractDetails.status.toLowerCase()">
-              {{ contractDetails.status }}
+                {{ contractDetails.status }}
               </span>
               <span 
                 class="info-icon" 
@@ -81,6 +81,28 @@
               >
                 ℹ️
               </span>
+            </span>
+          </div>
+          <div class="detail-item" v-if="currentAccount.toLowerCase() === contractDetails.depositor.toLowerCase()">
+            <span class="detail-label">Beneficiary</span>
+            <span 
+              class="detail-value copyable" 
+              @click="copyToClipboard(contractDetails.beneficiary)"
+              :title="copyStatus"
+            >
+              {{ formatAddress(contractDetails.beneficiary) }}
+              <span class="copy-icon">📋</span>
+            </span>
+          </div>
+          <div class="detail-item" v-if="currentAccount.toLowerCase() === contractDetails.beneficiary.toLowerCase()">
+            <span class="detail-label">Depositor</span>
+            <span 
+              class="detail-value copyable" 
+              @click="copyToClipboard(contractDetails.depositor)"
+              :title="copyStatus"
+            >
+              {{ formatAddress(contractDetails.depositor) }}
+              <span class="copy-icon">📋</span>
             </span>
           </div>
         </div>
