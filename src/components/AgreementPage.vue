@@ -91,8 +91,8 @@
             >
               {{ loading ? 'Deploying...' : 'Deploy Contract' }}
             </button>
-          </form>
-        </div>
+      </form>
+    </div>
 
         <!-- Contract Details View -->
         <div v-else class="card contract-details">
@@ -294,6 +294,13 @@ export default {
           throw new Error("Deadline must be in the future");
         }
 
+        console.log('Sending transaction with params:', {
+          beneficiary: this.beneficiary,
+          deadlineTimestamp,
+          amount: this.amount
+        });
+
+        // Send the transaction
         const tx = await this.factoryContract.methods.createEscrow(
           this.beneficiary,
           deadlineTimestamp
@@ -301,10 +308,30 @@ export default {
           from: this.currentAccount,
           value: this.web3.utils.toWei(this.amount, 'ether')
         });
+        console.log('Transaction sent:', tx);
 
-        this.deployedContract = tx.events.EscrowCreated.returnValues.escrow;
+        // Get the EscrowCreated event from the transaction events
+        const event = tx.events.EscrowCreated;
+        if (!event) {
+          throw new Error("EscrowCreated event not found in transaction");
+        }
+
+        const escrowAddress = event.returnValues.escrow;
+        console.log('Escrow address from event:', escrowAddress);
+
+        // Verify the contract was deployed
+        const code = await this.web3.eth.getCode(escrowAddress);
+        if (code === '0x' || code === '') {
+          throw new Error("Contract deployment failed - no code at address");
+        }
+
+        console.log('Contract code length:', code.length);
+        this.deployedContract = escrowAddress;
+        console.log('Deployed contract address:', this.deployedContract);
+
         await this.loadContractDetails();
       } catch (error) {
+        console.error('Deploy contract error:', error);
         this.error = "Failed to deploy contract: " + error.message;
       } finally {
         this.loading = false;
