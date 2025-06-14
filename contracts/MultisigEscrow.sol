@@ -137,11 +137,12 @@ contract MultisigEscrow is ReentrancyGuard, Pausable, Multicall {
      * @notice The contract will emit an AgreementCreated event upon successful creation.
      */
     constructor(
+        address payable depositor, 
         address payable beneficiary,
         uint32 deadlineDate
     ) payable checkAddress(beneficiary) {
         _agreement = Agreement({
-            depositor: payable(_msgSender()),
+            depositor: depositor,
             beneficiary: beneficiary,
             deadlineDate: deadlineDate,
             startDate: uint32(block.timestamp),
