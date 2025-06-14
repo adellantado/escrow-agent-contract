@@ -35,7 +35,7 @@
 
       <!-- Escrow Details -->
       <div v-else class="escrow-details">
-        <div class="countdown-section">
+        <div v-if="contractDetails?.status === 'ACTIVE' || contractDetails?.status === 'LOCKED'" class="countdown-section">
           <h3>Time Remaining</h3>
           <div class="countdown-timer" :class="{ 'warning': timeRemaining < 3600 }">
             {{ formatTimeRemaining }}
@@ -261,7 +261,7 @@ export default {
     canPause() {
       return ['REVOKED', 'REJECTED', 'REFUNDED', 'CLOSED'].includes(this.contractDetails?.status) && 
              this.currentAccount.toLowerCase() === this.contractDetails.depositor.toLowerCase() &&
-             parseFloat(this.contractDetails.amount) > 0;
+             parseFloat(this.contractDetails.amount) === 0;
     }
   },
   watch: {
@@ -318,7 +318,13 @@ export default {
       
       this.timer = setInterval(() => {
         const now = Math.floor(Date.now() / 1000);
-        this.timeRemaining = Math.max(0, this.contractDetails.deadlineDate - now);
+        if (this.contractDetails.status === 'LOCKED') {
+          const deadline = this.contractDetails.deadlineDate;
+          const threeDaysAfterDeadline = deadline + (3 * 24 * 60 * 60);
+          this.timeRemaining = Math.max(0, threeDaysAfterDeadline - now);
+        } else {
+          this.timeRemaining = Math.max(0, this.contractDetails.deadlineDate - now);
+        }
         
         if (this.timeRemaining <= 0) {
           clearInterval(this.timer);
