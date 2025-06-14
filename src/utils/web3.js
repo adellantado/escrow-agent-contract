@@ -42,12 +42,6 @@ export const getContract = async (web3, contractABI, contractAddress) => {
     // Create contract instance with the ABI
     const contract = new web3.eth.Contract(contractABI, contractAddress);
     
-    // Verify the contract has the expected methods
-    if (!contract.methods.createEscrow) {
-      console.error("Contract methods:", Object.keys(contract.methods));
-      throw new Error("Contract ABI does not contain createEscrow method");
-    }
-    
     return contract;
   } catch (error) {
     console.error("Error creating contract instance:", error);
