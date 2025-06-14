@@ -557,9 +557,10 @@ export default {
 
 .actions-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 1rem;
   margin-top: 1rem;
+  justify-items: center;
 }
 
 .btn {
@@ -569,6 +570,9 @@ export default {
   transition: all 0.3s ease;
   border: none;
   font-weight: 500;
+  width: fit-content;
+  white-space: nowrap;
+  text-align: center;
 }
 
 .btn-primary {
