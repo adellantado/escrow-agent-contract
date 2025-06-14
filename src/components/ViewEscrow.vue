@@ -45,7 +45,14 @@
         <div class="details-grid">
           <div class="detail-item">
             <span class="detail-label">Contract Address</span>
-            <span class="detail-value">{{ formatAddress(escrowAddress) }}</span>
+            <span 
+              class="detail-value copyable" 
+              @click="copyToClipboard(escrowAddress)"
+              :title="copyStatus"
+            >
+              {{ formatAddress(escrowAddress) }}
+              <span class="copy-icon">📋</span>
+            </span>
           </div>
           <div class="detail-item">
             <span class="detail-label">Created Date</span>
@@ -61,8 +68,16 @@
           </div>
           <div class="detail-item">
             <span class="detail-label">Status</span>
-            <span class="detail-value" :class="contractDetails.status.toLowerCase()">
-              {{ contractDetails.status }}
+            <span class="detail-value status-container">
+              <span :class="contractDetails.status.toLowerCase()">
+                {{ contractDetails.status }}
+              </span>
+              <span 
+                class="info-icon" 
+                :title="getStatusDescription(contractDetails.status)"
+              >
+                ℹ️
+              </span>
             </span>
           </div>
         </div>
@@ -191,7 +206,8 @@ export default {
       loading: false,
       error: null,
       timeRemaining: 0,
-      timer: null
+      timer: null,
+      copyStatus: 'Click to copy'
     };
   },
   computed: {
@@ -365,6 +381,19 @@ export default {
       return statusMap[statusInt] || 'UNKNOWN';
     },
 
+    getStatusDescription(status) {
+      const descriptions = {
+        'FUNDED': 'Initial state when funds are deposited but not yet approved by the beneficiary',
+        'REVOKED': 'Contract was revoked by the depositor before beneficiary approval',
+        'REJECTED': 'Contract was rejected by the beneficiary',
+        'ACTIVE': 'Contract is active and funds are locked until deadline',
+        'REFUNDED': 'Funds were refunded to the depositor',
+        'CLOSED': 'Contract is completed and funds were released to the beneficiary',
+        'LOCKED': 'Contract is locked after deadline, waiting for multisig setup'
+      };
+      return descriptions[status] || 'Unknown status';
+    },
+
     // Contract Actions
     async revokeAgreement() {
       try {
@@ -495,6 +524,19 @@ export default {
         this.error = "Failed to pause contract: " + error.message;
       } finally {
         this.loading = false;
+      }
+    },
+
+    async copyToClipboard(text) {
+      try {
+        await navigator.clipboard.writeText(text);
+        this.copyStatus = 'Copied!';
+        setTimeout(() => {
+          this.copyStatus = 'Click to copy';
+        }, 2000);
+      } catch (err) {
+        console.error('Failed to copy:', err);
+        this.copyStatus = 'Failed to copy';
       }
     }
   },
@@ -650,5 +692,38 @@ export default {
 .btn-warning {
   background: #ffc107;
   color: #000;
+}
+
+.copyable {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all 0.2s ease;
+}
+
+.copyable:hover {
+  opacity: 0.8;
+}
+
+.copy-icon {
+  font-size: 0.9em;
+  opacity: 0.7;
+}
+
+.status-container {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.info-icon {
+  cursor: help;
+  opacity: 0.7;
+  transition: opacity 0.2s ease;
+}
+
+.info-icon:hover {
+  opacity: 1;
 }
 </style> 
