@@ -80,7 +80,16 @@ export const formatEth = (amount) => {
  * @param {number} duration - Duration to show the error (default: 5000ms)
  */
 export const handleError = (error, context = "", duration = 5000) => {
-  const errorMessage = error instanceof Error ? error.message : error;
+  let errorMessage;
+  if (error instanceof Error) {
+    errorMessage = error.message;
+    if (errorMessage.includes("JSON-RPC error")) {
+      errorMessage = error.data.message;
+    }
+  } else {
+    errorMessage = error;
+  }
+  
   const fullMessage = context ? `${context}: ${errorMessage}` : errorMessage;
   showGlobalError(fullMessage, duration);
   console.error(fullMessage, error);
