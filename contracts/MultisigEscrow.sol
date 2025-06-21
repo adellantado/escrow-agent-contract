@@ -314,9 +314,9 @@ contract MultisigEscrow is ReentrancyGuard, Pausable, Multicall {
      * @notice Only the depositor or beneficiary can call this function.
      */
     function getAgreementDetails() external view 
-            onlyDepositorOrBeneficiary returns (uint256, uint256, uint256, Status, address, bool) {
+            onlyDepositorOrBeneficiary returns (uint256, uint256, uint256, Status, address, address, address, bool) {
         return (address(this).balance, _agreement.startDate, _agreement.deadlineDate, 
-            _agreement.status, _agreement.multisig, _agreement.approved);
+            _agreement.status, _agreement.depositor, _agreement.beneficiary, _agreement.multisig, _agreement.approved);
     }
 
     /**
