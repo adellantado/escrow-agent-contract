@@ -48,3 +48,26 @@ export const getContract = async (web3, contractABI, contractAddress) => {
     throw error;
   }
 };
+
+/**
+ * Format ETH amount to avoid floating point precision issues
+ * @param {string|number} amount - The ETH amount to format
+ * @returns {string} - Formatted ETH amount string
+ */
+export const formatEth = (amount) => {
+  // Handle the amount as a string to avoid floating point precision issues
+  if (typeof amount === 'string') {
+    // If it's already a string, use it directly
+    const trimmed = amount.replace(/\.?0+$/, '');
+    return trimmed || '0';
+  }
+  
+  // For numbers, convert to string with fixed precision and clean up
+  const num = Number(amount);
+  if (isNaN(num)) return '0';
+  
+  // Convert to string with 18 decimal places to match ETH precision
+  const formatted = num.toFixed(18);
+  // Remove trailing zeros after decimal point
+  return formatted.replace(/\.?0+$/, '');
+};

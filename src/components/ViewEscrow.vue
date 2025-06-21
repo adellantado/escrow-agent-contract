@@ -199,7 +199,7 @@
 </template>
 
 <script>
-import { getWeb3, getContract } from "../utils/web3";
+import { getWeb3, getContract, formatEth } from "../utils/web3";
 import MultisigEscrowABI from "../abi/MultisigEscrow.json" with { type: "json" };
 
 export default {
@@ -380,10 +380,6 @@ export default {
         hour: '2-digit',
         minute: '2-digit'
       });
-    },
-
-    formatEth(amount) {
-      return parseFloat(amount).toFixed(18).replace(/\.?0+$/, '');
     },
 
     getStatusString(statusInt) {
