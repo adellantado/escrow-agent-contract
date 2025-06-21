@@ -55,7 +55,7 @@
 </template>
 
 <script>
-import { getWeb3, getContract } from "../utils/web3";
+import { getWeb3, getContract, handleError } from "../utils/web3";
 import MultisigEscrowFactoryABI from "../abi/MultisigEscrowFactory.json" with { type: "json" };
 
 export default {
@@ -74,7 +74,6 @@ export default {
       deadlineDate: "",
       deadlineTimestamp: 0,
       loading: false,
-      error: null,
       factoryContract: null
     };
   },
@@ -89,15 +88,13 @@ export default {
           factoryAddress
         );
       } catch (error) {
-        this.error = "Failed to initialize contracts: " + error.message;
-        console.error("Contract initialization error:", error);
+        handleError(error, "Failed to initialize contracts");
       }
     },
 
     async deployContract() {
       try {
         this.loading = true;
-        this.error = null;
 
         if (!this.factoryContract) {
           await this.initializeContracts();
@@ -168,7 +165,7 @@ export default {
         if (error.data) {
           console.error('Error data:', error.data);
         }
-        this.error = "Failed to deploy contract: " + (error.message || error);
+        handleError(error, "Failed to deploy contract");
       } finally {
         this.loading = false;
       }

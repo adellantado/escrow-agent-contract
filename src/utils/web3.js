@@ -1,4 +1,5 @@
 import Web3 from "web3";
+import { showGlobalError } from "./errorStore";
 
 export const getWeb3 = async () => {
   // Check if MetaMask is installed
@@ -70,4 +71,17 @@ export const formatEth = (amount) => {
   const formatted = num.toFixed(18);
   // Remove trailing zeros after decimal point
   return formatted.replace(/\.?0+$/, '');
+};
+
+/**
+ * Handle errors globally with automatic display
+ * @param {Error|string} error - The error to handle
+ * @param {string} context - Context message to prepend to the error
+ * @param {number} duration - Duration to show the error (default: 5000ms)
+ */
+export const handleError = (error, context = "", duration = 5000) => {
+  const errorMessage = error instanceof Error ? error.message : error;
+  const fullMessage = context ? `${context}: ${errorMessage}` : errorMessage;
+  showGlobalError(fullMessage, duration);
+  console.error(fullMessage, error);
 };

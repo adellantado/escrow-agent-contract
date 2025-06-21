@@ -1,5 +1,8 @@
 <template>
   <div class="app">
+    <!-- Global Error Component -->
+    <GlobalError />
+    
     <header class="header">
       <div class="header-content">
         <div class="title-section">
@@ -46,10 +49,6 @@
       </div>
     </header>
 
-    <div v-if="error" class="error-message">
-      {{ error }}
-    </div>
-
     <main class="main-content">
       <router-view 
         v-if="isConnected"
@@ -62,24 +61,25 @@
 </template>
 
 <script>
-import { getWeb3 } from "./utils/web3";
+import { getWeb3, handleError } from "./utils/web3";
 import InitView from './components/InitView.vue';
 import CreateEscrow from './components/CreateEscrow.vue';
 import ViewEscrow from './components/ViewEscrow.vue';
+import GlobalError from './components/GlobalError.vue';
 
 export default {
   name: 'App',
   components: {
     InitView,
     CreateEscrow,
-    ViewEscrow
+    ViewEscrow,
+    GlobalError
   },
   data() {
     return {
       isConnected: false,
       currentAccount: null,
       loading: false,
-      error: null,
       isMenuOpen: false
     };
   },
@@ -95,7 +95,7 @@ export default {
         this.isConnected = true;
         await this.initializeWeb3();
       } catch (error) {
-        this.error = "Failed to connect wallet: " + error.message;
+        handleError(error, "Failed to connect wallet");
       } finally {
         this.loading = false;
       }
@@ -105,8 +105,7 @@ export default {
       try {
         await getWeb3();
       } catch (error) {
-        this.error = "Failed to initialize Web3: " + error.message;
-        console.error("Web3 initialization error:", error);
+        handleError(error, "Failed to initialize Web3");
       }
     },
 
@@ -117,7 +116,7 @@ export default {
         this.currentAccount = null;
         this.$router.push('/');
       } catch (error) {
-        this.error = "Failed to disconnect wallet: " + error.message;
+        handleError(error, "Failed to disconnect wallet");
       } finally {
         this.loading = false;
       }

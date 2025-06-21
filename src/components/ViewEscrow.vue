@@ -199,7 +199,7 @@
 </template>
 
 <script>
-import { getWeb3, getContract, formatEth } from "../utils/web3";
+import { getWeb3, getContract, formatEth, handleError } from "../utils/web3";
 import MultisigEscrowABI from "../abi/MultisigEscrow.json" with { type: "json" };
 
 export default {
@@ -221,7 +221,6 @@ export default {
       contractDetails: null,
       escrowContract: null,
       loading: false,
-      error: null,
       timeRemaining: 0,
       timer: null,
       copyStatus: 'Click to copy',
@@ -311,7 +310,6 @@ export default {
     async loadEscrowDetails() {
       try {
         this.loading = true;
-        this.error = null;
 
         this.web3 = await getWeb3();
         this.escrowContract = await getContract(
@@ -341,7 +339,7 @@ export default {
         this.startCountdown();
       } catch (error) {
         console.error('Load escrow details error:', error);
-        this.error = "Failed to load escrow details: " + error.message;
+        handleError(error, "Failed to load escrow details");
       } finally {
         this.loading = false;
       }
@@ -382,6 +380,10 @@ export default {
       });
     },
 
+    formatEth(amount) {
+      return formatEth(amount);
+    },
+
     getStatusString(statusInt) {
       const statusMap = {
         0: 'FUNDED',
@@ -415,7 +417,7 @@ export default {
         await this.escrowContract.methods.revokeAgreement().send({ from: this.currentAccount });
         await this.loadEscrowDetails();
       } catch (error) {
-        this.error = "Failed to revoke agreement: " + error.message;
+        handleError(error, "Failed to revoke agreement");
       } finally {
         this.loading = false;
       }
@@ -427,7 +429,7 @@ export default {
         await this.escrowContract.methods.approveAgreement().send({ from: this.currentAccount });
         await this.loadEscrowDetails();
       } catch (error) {
-        this.error = "Failed to approve agreement: " + error.message;
+        handleError(error, "Failed to approve agreement");
       } finally {
         this.loading = false;
       }
@@ -439,7 +441,7 @@ export default {
         await this.escrowContract.methods.rejectAgreement().send({ from: this.currentAccount });
         await this.loadEscrowDetails();
       } catch (error) {
-        this.error = "Failed to reject agreement: " + error.message;
+        handleError(error, "Failed to reject agreement");
       } finally {
         this.loading = false;
       }
@@ -451,7 +453,7 @@ export default {
         await this.escrowContract.methods.refundAgreement().send({ from: this.currentAccount });
         await this.loadEscrowDetails();
       } catch (error) {
-        this.error = "Failed to refund agreement: " + error.message;
+        handleError(error, "Failed to refund agreement");
       } finally {
         this.loading = false;
       }
@@ -463,7 +465,7 @@ export default {
         await this.escrowContract.methods.releaseFunds().send({ from: this.currentAccount });
         await this.loadEscrowDetails();
       } catch (error) {
-        this.error = "Failed to release funds: " + error.message;
+        handleError(error, "Failed to release funds");
       } finally {
         this.loading = false;
       }
@@ -475,7 +477,7 @@ export default {
         await this.escrowContract.methods.withdrawFunds().send({ from: this.currentAccount });
         await this.loadEscrowDetails();
       } catch (error) {
-        this.error = "Failed to withdraw funds: " + error.message;
+        handleError(error, "Failed to withdraw funds");
       } finally {
         this.loading = false;
       }
@@ -487,7 +489,7 @@ export default {
         await this.escrowContract.methods.removeFunds().send({ from: this.currentAccount });
         await this.loadEscrowDetails();
       } catch (error) {
-        this.error = "Failed to remove funds: " + error.message;
+        handleError(error, "Failed to remove funds");
       } finally {
         this.loading = false;
       }
@@ -499,7 +501,7 @@ export default {
         await this.escrowContract.methods.lockFunds().send({ from: this.currentAccount });
         await this.loadEscrowDetails();
       } catch (error) {
-        this.error = "Failed to lock funds: " + error.message;
+        handleError(error, "Failed to lock funds");
       } finally {
         this.loading = false;
       }
@@ -511,7 +513,7 @@ export default {
         await this.escrowContract.methods.setMultisig(multisigAddress).send({ from: this.currentAccount });
         await this.loadEscrowDetails();
       } catch (error) {
-        this.error = "Failed to set multisig: " + error.message;
+        handleError(error, "Failed to set multisig");
       } finally {
         this.loading = false;
       }
@@ -523,7 +525,7 @@ export default {
         await this.escrowContract.methods.approveMultisig().send({ from: this.currentAccount });
         await this.loadEscrowDetails();
       } catch (error) {
-        this.error = "Failed to approve multisig: " + error.message;
+        handleError(error, "Failed to approve multisig");
       } finally {
         this.loading = false;
       }
