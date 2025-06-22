@@ -1,6 +1,7 @@
 # 💼 Escrow Agent Contract - v0.3
 
-> [!NOTE]: A separate Simple Multisig Escrow Contract was separated from this project to it's own repository: 
+> [!NOTE]
+> A separate Simple Multisig Escrow Contract was separated from this project to it's own repository: 
 > https://github.com/adellantado/simple-multisig-escrow
 
 
